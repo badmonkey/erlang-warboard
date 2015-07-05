@@ -1,0 +1,3 @@
+#!/bin/bash
+
+exec erl -pz ebin/ deps/*/ebin apps/*/ebin  -config priv/sys.config  -s warboard_app

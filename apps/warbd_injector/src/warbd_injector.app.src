@@ -1,0 +1,20 @@
+{application, warbd_injector,
+[
+    {description, "warbd_injector"},
+    {vsn, "1.0.0"},
+    {modules,
+        [ warbd_injector
+        , warbd_injector_app, warbd_injector_sup
+        ] },
+    {registered,
+        [ warbd_injector
+        ] },
+    {applications,
+        [ kernel, stdlib, lager
+        , crypto, public_key, ssl
+        , ranch, cowlib, asn1, gun
+        ] },
+    {mod, { warbd_injector_app, []}},
+    {env, []}
+]}.
+

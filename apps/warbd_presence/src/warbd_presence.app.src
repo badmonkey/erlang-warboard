@@ -1,0 +1,20 @@
+{application, warbd_presence,
+[
+    {description, "warbd_presence"},
+    {vsn, "1.0.0"},
+    {modules,
+        [ warbd_presence
+        , warbd_presence_app, warbd_presence_sup
+        ] },
+    {registered,
+        [ warbd_presence
+        ] },
+    {applications,
+        [ kernel, stdlib, crypto
+        , erlangx, lager
+        , warbd_injector
+        ] },
+    {mod, { warbd_presence_app, []}},
+    {env, []}
+]}.
+

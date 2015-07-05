@@ -1,0 +1,20 @@
+{application, warboard,
+[
+    {description, "warboard"},
+    {vsn, "1.0.0"},
+    {modules,
+        [ warboard
+        , warboard_app, warboard_sup
+        ] },
+    {registered,
+        [ warboard
+        ] },
+    {applications,
+        [ kernel, stdlib, crypto
+        , erlangx, lager
+        , warbd_presence, warbd_player_info
+        ] },
+    {mod, { warboard_app, []}},
+    {env, []}
+]}.
+

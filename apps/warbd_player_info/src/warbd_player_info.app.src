@@ -1,0 +1,20 @@
+{application, warbd_player_info,
+[
+    {description, "warbd_player_info"},
+    {vsn, "1.0.0"},
+    {modules,
+        [ warbd_player_info
+        , warbd_player_info_app, warbd_player_info_sup
+        ] },
+    {registered,
+        [ warbd_player_info
+        ] },
+    {applications,
+        [ kernel, stdlib, crypto
+        , erlangx, lager
+        , warbd_query
+        ] },
+    {mod, { warbd_player_info_app, []}},
+    {env, []}
+]}.
+
