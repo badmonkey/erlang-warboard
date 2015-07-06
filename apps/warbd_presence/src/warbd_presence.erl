@@ -44,7 +44,7 @@ init(_Args) ->
     lager:info("Starting presence"),
     EvtChannel = warbd_channel:new(),
     
-    publisher:subscribe(EvtChannel, [player, match_one, event]),
+    publisher:subscribe(EvtChannel, warbd_channel:player_event()),
     
     {ok, #state{ evtchannel = EvtChannel }}.
 

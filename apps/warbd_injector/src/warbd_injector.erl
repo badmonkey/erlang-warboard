@@ -61,20 +61,69 @@ handle_frame({system, up}, #state{} = State) ->
        }
     , State};
 
-
+    
 handle_frame({json, #{ <<"type">> := <<"heartbeat">> } }, #state{} = State) ->
-	lager:info("warbd_injector:frame HEARBEAT"),
-	{ok, State};
-	
-	
+    lager:info("warbd_injector:handle_frame HEARBEAT"),
+    {ok, State};    
+    
+    
 handle_frame({json, #{ <<"type">> := <<"serviceStateChanged">> } }, #state{} = State) ->
-	lager:info("warbd_injector:frame STATECHANGE"),
-	{ok, State};
-	
+    lager:info("warbd_injector:handle_frame STATECHANGE service"),
+    {ok, State};
+    
+
+handle_frame({json, #{ <<"type">> := <<"connectionStateChanged">> } }, #state{} = State) ->
+    lager:info("warbd_injector:handle_frame STATECHANGE connection"),
+    {ok, State};    
+    
+    
+handle_frame({json, #{ <<"type">> := <<"serviceMessage">> } = Data }, #state{} = State) ->
+    handle_event( maps:get(<<"payload">>, Data), State);    
+
+
+handle_frame({json, #{ <<"subscription">> := Data } }, #state{} = State) ->
+    lager:info("warbd_injector:handle_frame SUBSCRIPTION ~p", [Data]),
+    {ok, State};
+    
 
 handle_frame(Msg, #state{} = State) ->
-    lager:info("warbd_injector:frame ~p", [Msg]),
-    publisher:notify(State#state.evtchannel, [player, tr, event], {login, "Hello World"}),
+    lager:info("warbd_injector:handle_frame UNHANDLED ~p", [Msg]),
+    {ok, State}.
+
+    
+%%%%% ------------------------------------------------------- %%%%%
+    
+
+handle_event( #{ <<"event_name">> := <<"PlayerLogin">> } = Data, #state{} = State) ->
+    lager:info("warbd_injector:handle_event LOGIN ~p", [Data]),
+    #{ <<"character_id">> := PlayerId
+     , <<"timestamp">> := Timestamp
+     } = Data,
+     
+    Faction = warbd_player_info:faction(PlayerId),
+    
+    publisher:notify( State#state.evtchannel
+                    , warbd_channel:player_event(Faction)
+                    , {login, PlayerId, Faction, Timestamp}),
+    {ok, State};
+
+    
+handle_event( #{ <<"event_name">> := <<"PlayerLogout">> } = Data, #state{} = State) ->
+    lager:info("warbd_injector:handle_event LOGOUT ~p", [Data]),
+    #{ <<"character_id">> := PlayerId
+     , <<"timestamp">> := Timestamp
+     } = Data,
+     
+    Faction = warbd_player_info:faction(PlayerId),
+    
+    publisher:notify( State#state.evtchannel
+                    , warbd_channel:player_event(Faction)
+                    , {logout, PlayerId, Faction, Timestamp}),
+    {ok, State};
+    
+    
+handle_event(Data, #state{} = State) ->
+    lager:info("warbd_injector:handle_event UNHANDLED ~p", [Data]),
     {ok, State}.
 
 

@@ -13,6 +13,7 @@
         [ kernel, stdlib, lager
         , crypto, public_key, ssl
         , ranch, cowlib, asn1, gun
+        , warbd_player_info
         ] },
     {mod, { warbd_injector_app, []}},
     {env, []}
