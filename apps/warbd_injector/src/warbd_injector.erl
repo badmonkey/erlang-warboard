@@ -62,6 +62,16 @@ handle_frame({system, up}, #state{} = State) ->
     , State};
 
 
+handle_frame({json, #{ <<"type">> := <<"heartbeat">> } }, #state{} = State) ->
+	lager:info("warbd_injector:frame HEARBEAT"),
+	{ok, State};
+	
+	
+handle_frame({json, #{ <<"type">> := <<"serviceStateChanged">> } }, #state{} = State) ->
+	lager:info("warbd_injector:frame STATECHANGE"),
+	{ok, State};
+	
+
 handle_frame(Msg, #state{} = State) ->
     lager:info("warbd_injector:frame ~p", [Msg]),
     publisher:notify(State#state.evtchannel, [player, tr, event], {login, "Hello World"}),
