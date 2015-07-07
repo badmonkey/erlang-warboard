@@ -8,3 +8,4 @@ deps
 ebin
 .rebar
 logs/
+db/

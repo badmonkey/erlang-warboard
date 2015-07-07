@@ -96,10 +96,11 @@ handle_frame(Msg, #state{} = State) ->
 
 handle_event( #{ <<"event_name">> := <<"PlayerLogin">> } = Data, #state{} = State) ->
     lager:info("warbd_injector:handle_event LOGIN ~p", [Data]),
-    #{ <<"character_id">> := PlayerId
+    #{ <<"character_id">> := BinPlayerId
      , <<"timestamp">> := Timestamp
      } = Data,
      
+    PlayerId = xerlang:binary_to_integer(BinPlayerId),
     Faction = warbd_player_info:faction(PlayerId),
     
     publisher:notify( State#state.evtchannel
@@ -110,10 +111,11 @@ handle_event( #{ <<"event_name">> := <<"PlayerLogin">> } = Data, #state{} = Stat
     
 handle_event( #{ <<"event_name">> := <<"PlayerLogout">> } = Data, #state{} = State) ->
     lager:info("warbd_injector:handle_event LOGOUT ~p", [Data]),
-    #{ <<"character_id">> := PlayerId
+    #{ <<"character_id">> := BinPlayerId
      , <<"timestamp">> := Timestamp
      } = Data,
      
+    PlayerId = xerlang:binary_to_integer(BinPlayerId),
     Faction = warbd_player_info:faction(PlayerId),
     
     publisher:notify( State#state.evtchannel
