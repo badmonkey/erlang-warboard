@@ -36,7 +36,7 @@ child_spec(Id, _Args) -> ?SERVICE_SPEC(Id, ?MODULE, []).
 
 
 websock_info() ->
-    [ {url, "wss://push.planetside2.com/streaming?environment=ps2&service-id=s:example"}
+    [ {url, "wss://push.planetside2.com/streaming?environment=ps2&service-id=s:warboard"}
     ].
     
     
@@ -45,7 +45,7 @@ websock_info() ->
 
 
 init(_Args) ->
-    lager:info("Starting websock here"),
+    lager:info("Starting warbd_injector"),
     {ok, #state{ evtchannel = warbd_channel:new() }}.
 
     
@@ -63,17 +63,17 @@ handle_frame({system, up}, #state{} = State) ->
 
     
 handle_frame({json, #{ <<"type">> := <<"heartbeat">> } }, #state{} = State) ->
-    lager:info("warbd_injector:handle_frame HEARBEAT"),
+    lager:debug("frame HEARBEAT"),
     {ok, State};    
     
     
 handle_frame({json, #{ <<"type">> := <<"serviceStateChanged">> } }, #state{} = State) ->
-    lager:info("warbd_injector:handle_frame STATECHANGE service"),
+    lager:debug("frame STATECHANGE service"),
     {ok, State};
     
 
 handle_frame({json, #{ <<"type">> := <<"connectionStateChanged">> } }, #state{} = State) ->
-    lager:info("warbd_injector:handle_frame STATECHANGE connection"),
+    lager:debug("frame STATECHANGE connection"),
     {ok, State};    
     
     
@@ -82,12 +82,12 @@ handle_frame({json, #{ <<"type">> := <<"serviceMessage">> } = Data }, #state{} =
 
 
 handle_frame({json, #{ <<"subscription">> := Data } }, #state{} = State) ->
-    lager:info("warbd_injector:handle_frame SUBSCRIPTION ~p", [Data]),
+    lager:debug("frame SUBSCRIPTION ~p", [Data]),
     {ok, State};
     
 
 handle_frame(Msg, #state{} = State) ->
-    lager:info("warbd_injector:handle_frame UNHANDLED ~p", [Msg]),
+    lager:warning("frame UNHANDLED ~p", [Msg]),
     {ok, State}.
 
     
@@ -95,7 +95,7 @@ handle_frame(Msg, #state{} = State) ->
     
 
 handle_event( #{ <<"event_name">> := <<"PlayerLogin">> } = Data, #state{} = State) ->
-    lager:info("warbd_injector:handle_event LOGIN ~p", [Data]),
+    lager:debug("event LOGIN ~p", [Data]),
     #{ <<"character_id">> := BinPlayerId
      , <<"timestamp">> := Timestamp
      } = Data,
@@ -110,7 +110,7 @@ handle_event( #{ <<"event_name">> := <<"PlayerLogin">> } = Data, #state{} = Stat
 
     
 handle_event( #{ <<"event_name">> := <<"PlayerLogout">> } = Data, #state{} = State) ->
-    lager:info("warbd_injector:handle_event LOGOUT ~p", [Data]),
+    lager:debug("event LOGOUT ~p", [Data]),
     #{ <<"character_id">> := BinPlayerId
      , <<"timestamp">> := Timestamp
      } = Data,
@@ -125,7 +125,7 @@ handle_event( #{ <<"event_name">> := <<"PlayerLogout">> } = Data, #state{} = Sta
     
     
 handle_event(Data, #state{} = State) ->
-    lager:info("warbd_injector:handle_event UNHANDLED ~p", [Data]),
+    lager:warning("event UNHANDLED ~p", [Data]),
     {ok, State}.
 
 
@@ -133,7 +133,7 @@ handle_event(Data, #state{} = State) ->
 
 
 handle_call(_Request, _From, #state{} = State) ->
-    lager:info("warbd_injector:call UNKNOWN ~p", [_Request]),
+    lager:warning("call UNKNOWN ~p", [_Request]),
     {reply, ok, State}.
 
     
@@ -141,7 +141,7 @@ handle_call(_Request, _From, #state{} = State) ->
 
     
 handle_cast(_Msg, #state{} = State) ->
-    lager:info("warbd_injector:cast UNKNOWN ~p", [_Msg]),
+    lager:warning("cast UNKNOWN ~p", [_Msg]),
     {noreply, State}.
 
     
@@ -149,7 +149,7 @@ handle_cast(_Msg, #state{} = State) ->
 
     
 handle_info(_Info, #state{} = State) ->
-    lager:info("warbd_injector:info UNKNOWN ~p", [_Info]),
+    lager:warning("info UNKNOWN ~p", [_Info]),
     {noreply, State}.
 
     

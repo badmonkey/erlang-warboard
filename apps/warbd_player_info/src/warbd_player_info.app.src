@@ -11,7 +11,7 @@
         ] },
     {applications,
         [ kernel, stdlib, crypto
-        , erlangx, lager
+        , erlangx, lager, mnesia
         , warbd_query
         ] },
     {mod, { warbd_player_info_app, []}},

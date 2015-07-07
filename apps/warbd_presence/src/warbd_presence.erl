@@ -53,7 +53,7 @@ init(_Args) ->
 
 
 handle_call(_Request, _From, State) ->
-    lager:info("warbd_presence:call stopped ~p", [_Request]),
+    lager:error("call STOPPED ~p", [_Request]),
     {stop, invalid_call_request, State}.
 
     
@@ -61,7 +61,7 @@ handle_call(_Request, _From, State) ->
 
     
 handle_cast(_Msg, State) ->
-    lager:info("warbd_presence:cast stopped ~p", [_Msg]),
+    lager:error("cast STOPPED ~p", [_Msg]),
     {stop, invalid_cast_request, State}.
 
     
@@ -69,7 +69,7 @@ handle_cast(_Msg, State) ->
 
     
 handle_info(_Info, State) ->
-    lager:info("warbd_presence:info UNKNOWN ~p", [_Info]),
+    lager:warning("info UNKNOWN ~p", [_Info]),
     {noreply, State}.
 
     

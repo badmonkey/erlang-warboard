@@ -11,7 +11,6 @@
 % Public API
 
 start() ->
-	%mnesia:create_schema( [node()] ),
     application:ensure_all_started(warboard),
     lager:info("Started Warboard server"),
     application:load(warboard).

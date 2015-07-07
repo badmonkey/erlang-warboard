@@ -27,47 +27,41 @@
 
     
 -record(db_player_info, 
-    { player_id				:: warbd_type:player_id()
-    , name					:: string()
-    , faction				:: warbd_type:faction()
+    { player_id             :: warbd_type:player_id()
+    , name                  :: string()
+    , faction               :: warbd_type:faction()
     , last_update
     }).
     
     
 -record(count_stats_type,
-	{ value					:: pos_integer()
-	, monthly				:: pos_integer()
-	, weekly				:: pos_integer()
-	, daily					:: pos_integer()
-	, one_life_max			:: pos_integer()
-	}).
-	
+    { value                 :: non_neg_integer()
+    , monthly               :: non_neg_integer()
+    , weekly                :: non_neg_integer()
+    , daily                 :: non_neg_integer()
+    , one_life_max          :: non_neg_integer()
+    }).
+    
     
 -record(db_player_stats,
-	{ player_id				:: warbd_type:player_id()
-	, last_login
-	, battle_rank			:: integer()
-	, score					:: #count_stats_type{}
-	, kills					:: #count_stats_type{}
-	, deaths				:: #count_stats_type{}
-	}).
+    { player_id             :: warbd_type:player_id()
+    , last_update
+    , last_login
+    , battle_rank           :: non_neg_integer()
+    , login_count           :: pos_integer()
+    , minutes_played        :: non_neg_integer()
+    , score                 :: #count_stats_type{}
+    , kills                 :: #count_stats_type{}
+    , deaths                :: #count_stats_type{}
+    }).
     
     
 %%%%% ------------------------------------------------------- %%%%%
 % Public API
 
 
--spec faction( warbd_type:player_id() ) -> warbd_type:faction().
-
-faction(_PlayerId) ->
-    faction_tr.
-    
-    
-%%%%% ------------------------------------------------------- %%%%%
-
-
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+    table_service:start_link(?MODULE, ?SERVER, []).
 
     
 child_spec(Id, _Args) -> ?SERVICE_SPEC(Id, ?MODULE, []).
@@ -81,7 +75,20 @@ table_info(Table) ->
     [ ?FIELDS(Table)
     , ?TABLEDB
     ].
+
     
+%%%%% ------------------------------------------------------- %%%%%
+
+
+-spec faction( warbd_type:player_id() ) -> warbd_type:faction().
+
+faction(PlayerId) ->
+    Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
+                    []          -> gen_server:call(?SERVER, {update_player_info, PlayerId})
+                ;   [PlayerRec] -> PlayerRec
+                end,
+    (Player#db_player_info.faction).
+        
 
 %%%%% ------------------------------------------------------- %%%%%
 % Initialise Server
@@ -95,8 +102,21 @@ init(_Args) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
+%http://census.daybreakgames.com/s:warboard/get/ps2:v2/character/?character_id=5428010917272893697&c:show=name,faction_id
+handle_call({update_player_info, PlayerId}, _From, #state{} = State) ->
+    Player = #db_player_info{ player_id = PlayerId, name = "bob", faction = faction_nc },
+    mnesia:activity(transaction,
+            fun() ->
+                mnesia:write(Player)
+            end ),
+    {reply, Player, State};
+    
+    
+% http://census.daybreakgames.com/s:warboard/get/ps2:v2/character/?character_id=5428010917272893697&c:resolve=stat&c:resolve=online_status
+%handle_call({update_player_stats, PlayerId}, _From, #state{} = State) ->
+    
 handle_call(_Request, _From, State) ->
-    lager:info("warbd_player_info:call stopped ~p", [_Request]),
+    lager:error("call STOPPED ~p", [_Request]),
     {stop, invalid_call_request, State}.
 
     
@@ -104,7 +124,7 @@ handle_call(_Request, _From, State) ->
 
     
 handle_cast(_Msg, State) ->
-    lager:info("warbd_player_info:cast stopped ~p", [_Msg]),
+    lager:error("cast STOPPED ~p", [_Msg]),
     {stop, invalid_cast_request, State}.
 
     
@@ -112,7 +132,7 @@ handle_cast(_Msg, State) ->
 
     
 handle_info(_Info, State) ->
-    lager:info("warbd_player_info:info stopped ~p", [_Info]),
+    lager:error("info STOPPED ~p", [_Info]),
     {stop, invalid_info_request, State}.
 
     
