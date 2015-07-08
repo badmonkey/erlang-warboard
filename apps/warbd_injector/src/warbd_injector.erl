@@ -36,7 +36,7 @@ child_spec(Id, _Args) -> ?SERVICE_SPEC(Id, ?MODULE, []).
 
 
 websock_info() ->
-    [ {url, "wss://push.planetside2.com/streaming?environment=ps2&service-id=s:warboard"}
+    [ {url, xstring:format("wss://push.planetside2.com/streaming?environment=ps2&service-id=~s", [warboard_info:census_id()])}
     ].
     
     

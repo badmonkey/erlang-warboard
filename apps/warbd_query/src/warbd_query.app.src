@@ -11,7 +11,7 @@
         ] },
     {applications,
         [ kernel, stdlib, crypto
-        , erlangx, lager
+        , erlangx, lager, inets
         ] },
     {mod, { warbd_query_app, []}},
     {env, []}

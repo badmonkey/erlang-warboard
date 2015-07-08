@@ -9,6 +9,7 @@
 
 -include_lib("erlangx/include/supervisors.hrl").
 -include_lib("erlangx/include/table_service.hrl").
+-include_lib("warboard/include/warboard_records.hrl").
 
 
 -export([start_link/0, child_spec/2, tables/0, table_info/1]).
@@ -23,36 +24,6 @@
 
 -record(state,
     {
-    }).
-
-    
--record(db_player_info, 
-    { player_id             :: warbd_type:player_id()
-    , name                  :: string()
-    , faction               :: warbd_type:faction()
-    , last_update
-    }).
-    
-    
--record(count_stats_type,
-    { value                 :: non_neg_integer()
-    , monthly               :: non_neg_integer()
-    , weekly                :: non_neg_integer()
-    , daily                 :: non_neg_integer()
-    , one_life_max          :: non_neg_integer()
-    }).
-    
-    
--record(db_player_stats,
-    { player_id             :: warbd_type:player_id()
-    , last_update
-    , last_login
-    , battle_rank           :: non_neg_integer()
-    , login_count           :: pos_integer()
-    , minutes_played        :: non_neg_integer()
-    , score                 :: #count_stats_type{}
-    , kills                 :: #count_stats_type{}
-    , deaths                :: #count_stats_type{}
     }).
     
     
@@ -84,7 +55,7 @@ table_info(Table) ->
 
 faction(PlayerId) ->
     Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
-                    []          -> gen_server:call(?SERVER, {update_player_info, PlayerId})
+                    []          -> gen_server:call(?SERVER, {fetch_player_info, PlayerId})
                 ;   [PlayerRec] -> PlayerRec
                 end,
     (Player#db_player_info.faction).
@@ -102,9 +73,8 @@ init(_Args) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
-%http://census.daybreakgames.com/s:warboard/get/ps2:v2/character/?character_id=5428010917272893697&c:show=name,faction_id
-handle_call({update_player_info, PlayerId}, _From, #state{} = State) ->
-    Player = #db_player_info{ player_id = PlayerId, name = "bob", faction = faction_nc },
+handle_call({fetch_player_info, PlayerId}, _From, #state{} = State) ->
+    Player = warbd_query:get_player_info(PlayerId),
     mnesia:activity(transaction,
             fun() ->
                 mnesia:write(Player)
@@ -112,8 +82,7 @@ handle_call({update_player_info, PlayerId}, _From, #state{} = State) ->
     {reply, Player, State};
     
     
-% http://census.daybreakgames.com/s:warboard/get/ps2:v2/character/?character_id=5428010917272893697&c:resolve=stat&c:resolve=online_status
-%handle_call({update_player_stats, PlayerId}, _From, #state{} = State) ->
+%handle_call({fetch_player_stats, PlayerId}, _From, #state{} = State) ->
     
 handle_call(_Request, _From, State) ->
     lager:error("call STOPPED ~p", [_Request]),
@@ -122,6 +91,10 @@ handle_call(_Request, _From, State) ->
     
 %%%%% ------------------------------------------------------- %%%%%
 
+
+handle_cast({update_player_info, PlayerId}, #state{} = State) ->
+    {noreply, State};
+    
     
 handle_cast(_Msg, State) ->
     lager:error("cast STOPPED ~p", [_Msg]),

@@ -12,7 +12,7 @@ player/<faction>/event
 = Events Emitted =
 
 population/<faction>/event
-    { pop_change, Faction, IntervalSecs,
+    { pop_change, Faction, Timestamp, IntervalSecs,
         #{ logins   => {ins, outs}
          , unique   => {ins, outs}
          , range    => {min, max}
