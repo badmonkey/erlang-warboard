@@ -76,17 +76,16 @@ init(_Args) ->
 handle_call( {get_player_info, PlayerId}, From
            , #state{ request_type = undefined
                    , pending = #{ player_info := Requests } = Pending } = State) ->
-    lager:info("Query request for player_info ~p", [PlayerId]),
     NewState = State#state{
                     pending = Pending#{ player_info := add_request(Requests, PlayerId, From) }
                 },
     {noreply, start_request(player_info, NewState)};
     
     
-handle_call( {get_player_info, PlayerId}, From
-           , #state{ pending = #{ player_info := Requests } = Pending } = State) ->
+handle_call( {get_player_stats, PlayerId}, From
+           , #state{ pending = #{ player_stats := Requests } = Pending } = State) ->
     NewState = State#state{
-                    pending = Pending#{ player_info := add_request(Requests, PlayerId, From) }
+                    pending = Pending#{ player_stats := add_request(Requests, PlayerId, From) }
                 },
     {noreply, NewState};
 
@@ -183,6 +182,7 @@ start_request(player_info, #state{ census_id = Census, pending = #{ player_info 
         Url = xstring:format( "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:show=character_id,name,faction_id"
                             , [Census, Ids] ),
         
+        lager:debug("player_info QUERY ~p", [Url]),
         {ok, RequestId} = httpc:request(get, {Url, []}, [], [{sync, false}]),
         
         State#state{
@@ -201,12 +201,35 @@ start_request(player_stats, #state{} = State) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
-process_response(player_info, Result, State) ->
-    State;
+process_response( player_info
+                , {_ReturnCode, _Headers, Body}
+                , State) ->
+    Json = jiffy:decode(Body, [return_maps]),
+
+    lists:foldl(
+        fun(CharJson, #state{ pending = #{ player_info := Requests } } = StateN) ->
+            BinPlayerId = jsonx:get({"character_id"}, CharJson, jsthrow),
+            PlayerId = xerlang:binary_to_integer(BinPlayerId),
+
+            case maps:is_key(PlayerId, Requests) of
+                true    ->
+                    Fromlist = maps:get(PlayerId, Requests),
+                    lager:debug("replylist ~p", [Fromlist]),
+                    [ gen_server:reply(X, #db_player_info{}) || X <- Fromlist ],
+                    StateN#state{ pending = maps:remove(PlayerId, Requests) }
+                    
+            ;   false   ->
+                    lager:warning("No one waiting for Player ~p, skipping", [PlayerId]),
+                    StateN
+            end
+
+        end,
+        State,
+        jsonx:get({"character_list"}, Json, []) );
     
     
 process_response(player_stats, Result, State) ->
-    % generate player_info responses also
+    % generate player_stats responses also
     State.
     
     
