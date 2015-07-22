@@ -53,7 +53,7 @@ child_spec(Id, _Args) -> ?SERVICE_SPEC(Id, ?MODULE, []).
 -spec get_player_info( warbd_type:player_id() ) -> #db_player_info{}.
 
 get_player_info(PlayerId) ->
-    gen_server:call(?SERVER, {get_player_info, PlayerId}).
+    gen_server:call(?SERVER, {get_player_info, PlayerId}, infinity).
     
     
 get_player_stats(PlayerId) ->
@@ -73,6 +73,7 @@ init(_Args) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
+% No current request, queue it, start request
 handle_call( {get_player_info, PlayerId}, From
            , #state{ request_type = undefined
                    , pending = #{ player_info := Requests } = Pending } = State) ->
@@ -82,10 +83,11 @@ handle_call( {get_player_info, PlayerId}, From
     {noreply, start_request(player_info, NewState)};
     
     
-handle_call( {get_player_stats, PlayerId}, From
-           , #state{ pending = #{ player_stats := Requests } = Pending } = State) ->
+% Request already in progress, just queue it    
+handle_call( {get_player_info, PlayerId}, From
+           , #state{ pending = #{ get_player_info := Requests } = Pending } = State) ->
     NewState = State#state{
-                    pending = Pending#{ player_stats := add_request(Requests, PlayerId, From) }
+                    pending = Pending#{ get_player_info := add_request(Requests, PlayerId, From) }
                 },
     {noreply, NewState};
 
@@ -207,7 +209,7 @@ process_response( player_info
     Json = jiffy:decode(Body, [return_maps]),
 
     lists:foldl(
-        fun(CharJson, #state{ pending = #{ player_info := Requests } } = StateN) ->
+        fun(CharJson, #state{ pending = #{ player_info := Requests } = Pending } = StateN) ->
             BinPlayerId = jsonx:get({"character_id"}, CharJson, jsthrow),
             PlayerId = xerlang:binary_to_integer(BinPlayerId),
 
@@ -216,7 +218,9 @@ process_response( player_info
                     Fromlist = maps:get(PlayerId, Requests),
                     lager:debug("replylist ~p", [Fromlist]),
                     [ gen_server:reply(X, #db_player_info{}) || X <- Fromlist ],
-                    StateN#state{ pending = maps:remove(PlayerId, Requests) }
+                    StateN#state{
+                            pending = Pending#{ player_info := maps:remove(PlayerId, Requests) }
+                        }
                     
             ;   false   ->
                     lager:warning("No one waiting for Player ~p, skipping", [PlayerId]),

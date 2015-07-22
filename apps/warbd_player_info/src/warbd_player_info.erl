@@ -55,7 +55,7 @@ table_info(Table) ->
 
 faction(PlayerId) ->
     Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
-                    []          -> gen_server:call(?SERVER, {fetch_player_info, PlayerId})
+                    []          -> gen_server:call(?SERVER, {fetch_player_info, PlayerId}, infinity)
                 ;   [PlayerRec] -> PlayerRec
                 end,
     (Player#db_player_info.faction).
