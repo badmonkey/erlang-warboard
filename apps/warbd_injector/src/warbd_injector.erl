@@ -62,13 +62,19 @@ handle_frame({system, up}, #state{} = State) ->
     , State};
 
     
-handle_frame({json, #{ <<"type">> := <<"heartbeat">> } }, #state{} = State) ->
-    lager:debug("frame HEARBEAT"),
+handle_frame({json, #{ <<"send this for help">> := _Msg}}, #state{} = State) ->
+    lager:debug("frame HELP"),
+    {ok, State}; 
+    
+    
+handle_frame({json, #{ <<"type">> := <<"heartbeat">> } = Data }, #state{} = State) ->
+    % send heartbeat message to pubsub system
+    lager:debug("frame HEARBEAT ~p", [Data]),
     {ok, State};    
     
     
-handle_frame({json, #{ <<"type">> := <<"serviceStateChanged">> } }, #state{} = State) ->
-    lager:debug("frame STATECHANGE service"),
+handle_frame({json, #{ <<"type">> := <<"serviceStateChanged">> } = Data }, #state{} = State) ->
+    lager:debug("frame STATECHANGE service ~p", [Data]),
     {ok, State};
     
 
@@ -97,30 +103,32 @@ handle_frame(Msg, #state{} = State) ->
 handle_event( #{ <<"event_name">> := <<"PlayerLogin">> } = Data, #state{} = State) ->
     lager:debug("event LOGIN ~p", [Data]),
     #{ <<"character_id">> := BinPlayerId
-     , <<"timestamp">> := Timestamp
+     , <<"timestamp">> := BinTimestamp
      } = Data,
      
     PlayerId = xerlang:binary_to_integer(BinPlayerId),
-    Faction = warbd_player_info:faction(PlayerId),
+    {World, Faction} = warbd_player_info:world_faction(PlayerId),
+    Timestamp = warboard_info:timestamp(BinTimestamp),
     
     publisher:notify( State#state.evtchannel
-                    , warbd_channel:player_event(Faction)
-                    , {login, PlayerId, Faction, Timestamp}),
+                    , warbd_channel:player_event(World, Faction)
+                    , {login, PlayerId, World, Faction, Timestamp}),
     {ok, State};
 
     
 handle_event( #{ <<"event_name">> := <<"PlayerLogout">> } = Data, #state{} = State) ->
     lager:debug("event LOGOUT ~p", [Data]),
     #{ <<"character_id">> := BinPlayerId
-     , <<"timestamp">> := Timestamp
+     , <<"timestamp">> := BinTimestamp
      } = Data,
      
     PlayerId = xerlang:binary_to_integer(BinPlayerId),
-    Faction = warbd_player_info:faction(PlayerId),
+    {World, Faction} = warbd_player_info:world_faction(PlayerId),
+    Timestamp = warboard_info:timestamp(BinTimestamp),
     
     publisher:notify( State#state.evtchannel
-                    , warbd_channel:player_event(Faction)
-                    , {logout, PlayerId, Faction, Timestamp}),
+                    , warbd_channel:player_event(World, Faction)
+                    , {logout, PlayerId, World, Faction, Timestamp}),
     {ok, State};
     
     

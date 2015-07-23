@@ -5,14 +5,18 @@ player online status + population events
 
 
 = Events Listen =
-player/<faction>/event
-    {login|logout, PlayerId, Faction, Timestamp}
+player/<world>/<faction>/event
+    { login | logout
+    , PlayerId      :: warbd_type:player_id()
+    , World         :: warbd_type:world()
+    , Faction       :: warbd_type:faction()
+    , Timestamp     :: warbd_type:timestamp()}
 
 
 = Events Emitted =
 
-population/<faction>/event
-    { pop_change, Faction, Timestamp, IntervalSecs,
+population/<world>/<faction>/event
+    { pop_change, World, Faction, Timestamp, IntervalSecs,
         #{ logins   => {ins, outs}
          , unique   => {ins, outs}
          , range    => {min, max}
@@ -23,11 +27,11 @@ population/<faction>/event
     
 = Public API =
 
-population() -> {VS, NC, TR}
-info(Player) -> {online, OnSince} | undefined
-oldest_player() -> {PlayerId, Timestamp}
+population(World) -> {VS, NC, TR}
+info(Player) -> {online, World, OnSince} | offline
+oldest_player(World) -> {PlayerId, Timestamp}
 
 
 = ETS tables =
 
-#presence{PlayerId, Timestamp}
+#presence{PlayerId, World, Timestamp}

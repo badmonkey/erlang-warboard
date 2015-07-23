@@ -4,8 +4,9 @@
 -record(db_player_info, 
     { player_id             :: warbd_type:player_id()
     , name                  :: string()
+    , world                 :: warbd_type:world()
     , faction               :: warbd_type:faction()
-    , last_update
+    , last_update           :: warbd_type:timestamp()
     }).
     
     
@@ -20,8 +21,8 @@
     
 -record(db_player_stats,
     { player_id             :: warbd_type:player_id()
-    , last_update
-    , last_login
+    , last_update           :: warbd_type:timestamp()
+    , last_login            :: warbd_type:timestamp()
     , battle_rank           :: non_neg_integer()
     , login_count           :: pos_integer()
     , minutes_played        :: non_neg_integer()

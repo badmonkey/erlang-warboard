@@ -13,7 +13,7 @@
 
 
 -export([start_link/0, child_spec/2, tables/0, table_info/1]).
--export([faction/1]).
+-export([faction/1, world/1, world_faction/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
@@ -59,7 +59,27 @@ faction(PlayerId) ->
                 ;   [PlayerRec] -> PlayerRec
                 end,
     (Player#db_player_info.faction).
+    
+    
+-spec world( warbd_type:player_id() ) -> warbd_type:world().
+
+world(PlayerId) ->
+    Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
+                    []          -> gen_server:call(?SERVER, {fetch_player_info, PlayerId}, infinity)
+                ;   [PlayerRec] -> PlayerRec
+                end,
+    (Player#db_player_info.world).    
         
+        
+-spec world_faction( warbd_type:player_id() ) -> {warbd_type:world(), warbd_type:faction()}.
+
+world_faction(PlayerId) ->
+    Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
+                    []          -> gen_server:call(?SERVER, {fetch_player_info, PlayerId}, infinity)
+                ;   [PlayerRec] -> PlayerRec
+                end,
+    {Player#db_player_info.world, Player#db_player_info.faction}.
+    
 
 %%%%% ------------------------------------------------------- %%%%%
 % Initialise Server
@@ -74,11 +94,19 @@ init(_Args) ->
 
 
 handle_call({fetch_player_info, PlayerId}, _From, #state{} = State) ->
-    Player = warbd_query:get_player_info(PlayerId),
-    mnesia:activity(transaction,
-            fun() ->
-                mnesia:write(Player)
-            end ),
+    % attempt to read from table again, in case another process has already fetched info
+    Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
+                    []          ->
+                        NewPlayer = warbd_query:get_player_info(PlayerId),
+                        mnesia:activity(transaction,
+                                        fun() ->
+                                            mnesia:write(NewPlayer)
+                                        end ),
+                        NewPlayer
+                        
+                ;   [PlayerRec] ->
+                        PlayerRec
+                end,
     {reply, Player, State};
     
     

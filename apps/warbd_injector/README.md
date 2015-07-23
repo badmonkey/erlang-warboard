@@ -6,6 +6,9 @@ Process events from census api stream
 
 = Events Emitted =
 
-player/<faction>/event
-    {login|logout, PlayerId, Faction, Timestamp}
+player/<world>/<faction>/event
+    {login|logout, PlayerId, World, Faction, Timestamp}
+    
+    
+server/<world>/heartbeat
 

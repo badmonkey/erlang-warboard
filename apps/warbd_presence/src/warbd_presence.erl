@@ -67,6 +67,16 @@ handle_cast(_Msg, State) ->
     
 %%%%% ------------------------------------------------------- %%%%%
 
+
+handle_info({login, PlayerId, World, Faction, Timestamp}, State) ->
+    lager:warning("presence LOGIN ~p ~p ~p", [PlayerId, World, Faction]),
+    {noreply, State};
+    
+    
+handle_info({logout, PlayerId, World, Faction, Timestamp}, State) ->
+    lager:warning("presence LOGOUT ~p ~p ~p", [PlayerId, World, Faction]),
+    {noreply, State};
+
     
 handle_info(_Info, State) ->
     lager:warning("info UNKNOWN ~p", [_Info]),

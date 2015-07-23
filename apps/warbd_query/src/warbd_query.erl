@@ -146,7 +146,7 @@ init_pending() ->
 
 -spec add_request( request(), warbd_type:player_id(), type:server_from() ) -> request().
 
-add_request( #{} = Requests, PlayerId, From) ->
+add_request(#{} = Requests, PlayerId, From) ->
     case maps:is_key(PlayerId, Requests) of
         true    ->
             Fromlist = maps:get(PlayerId, Requests),
@@ -173,6 +173,11 @@ start_pending_requests(#state{ pending = Pending } = State) ->
                         Pending),
     NState.
 
+    
+-define(PLAYER_INFO_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=world&c:show=character_id,name,faction_id").
+-define(PLAYER_STATS_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=stat&c:resolve=online_status").
+
+    
 
 start_request(player_info, #state{ census_id = Census, pending = #{ player_info := Requests } } = State) ->
     Players = maps_take(?MAX_PLAYER_REQUEST, Requests), 
@@ -181,8 +186,7 @@ start_request(player_info, #state{ census_id = Census, pending = #{ player_info 
         
     ;   _   ->
         Ids = string:join([integer_to_list(X) || X <- Players], ","),
-        Url = xstring:format( "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:show=character_id,name,faction_id"
-                            , [Census, Ids] ),
+        Url = xstring:format(?PLAYER_INFO_QUERY, [Census, Ids]),
         
         lager:debug("player_info QUERY ~p", [Url]),
         {ok, RequestId} = httpc:request(get, {Url, []}, [], [{sync, false}]),
@@ -193,8 +197,6 @@ start_request(player_info, #state{ census_id = Census, pending = #{ player_info 
             }
     end;
 
-
-% http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=stat&c:resolve=online_status
     
 start_request(player_stats, #state{} = State) ->
     State.    
@@ -204,7 +206,14 @@ start_request(player_stats, #state{} = State) ->
 
 
 process_response( player_info
-                , {_ReturnCode, _Headers, Body}
+                , {error, socket_closed_remotely}
+                , State) ->
+    lager:warning("QUERY socket closed remotely"),
+    State;
+    
+
+process_response( player_info
+                , {{_Version, _Code, _ReasonPhrase}, _Headers, Body}
                 , State) ->
     Json = jiffy:decode(Body, [return_maps]),
 
@@ -216,8 +225,15 @@ process_response( player_info
             case maps:is_key(PlayerId, Requests) of
                 true    ->
                     Fromlist = maps:get(PlayerId, Requests),
-                    lager:debug("replylist ~p", [Fromlist]),
-                    [ gen_server:reply(X, #db_player_info{}) || X <- Fromlist ],
+                    PlayerInfo = #db_player_info{
+                              player_id = PlayerId
+                            , name = binary_to_list( jsonx:get({"name", "first_lower"}, CharJson, jsthrow) )
+                            , world = warboard_info:world( jsonx:get({"world_id"}, CharJson, jsthrow) )
+                            , faction = warboard_info:faction( jsonx:get({"faction_id"}, CharJson, jsthrow) )
+                            , last_update = xtime:unix_epoch()
+                        },
+                    lager:debug("RESPONSE replylist ~p ~p", [Fromlist, PlayerInfo]),
+                    [ gen_server:reply(X, PlayerInfo) || X <- Fromlist ],
                     StateN#state{
                             pending = Pending#{ player_info := maps:remove(PlayerId, Requests) }
                         }
@@ -233,7 +249,7 @@ process_response( player_info
     
     
 process_response(player_stats, Result, State) ->
-    % generate player_stats responses also
+    % generate player_info responses also
     State.
     
     
