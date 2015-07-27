@@ -7,6 +7,6 @@ deps
 *.dump
 ebin
 .rebar
-logs/
+log/
 database/
 release/

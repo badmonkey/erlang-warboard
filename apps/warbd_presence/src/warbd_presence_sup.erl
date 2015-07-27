@@ -25,7 +25,8 @@ init(warbd_presence_sup) ->
     { ok
     , { {one_for_one, 2, 5}
       , supervisor_child:build_specs(
-            [ warbd_presence
+            [ {warbd_presence_briggs, warbd_presence, [briggs]}
+            , {warbd_presence_jaeger, warbd_presence, [jaeger]}
             ] )      
       }
     }.

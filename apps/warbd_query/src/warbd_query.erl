@@ -66,7 +66,7 @@ get_player_stats(PlayerId) ->
 
 
 init(_Args) ->
-    lager:info("Starting api query here"),
+    lager:notice("Starting census api query service"),
     {ok, #state{ census_id = warboard_info:census_id() }}.
 
     
@@ -160,6 +160,7 @@ add_request(#{} = Requests, PlayerId, From) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
+% iterate through all pending request types trying to start a batch of requests
 start_pending_requests(#state{ pending = Pending } = State) ->
     {_, NState} =   maps:fold(
                         fun (_, _, {true, S1}) -> {true, S1}
@@ -180,7 +181,7 @@ start_pending_requests(#state{ pending = Pending } = State) ->
     
 
 start_request(player_info, #state{ census_id = Census, pending = #{ player_info := Requests } } = State) ->
-    Players = maps_take(?MAX_PLAYER_REQUEST, Requests), 
+    Players = xmaps:takekeys(?MAX_PLAYER_REQUEST, Requests), 
     case Players of
         []  -> State
         
@@ -205,7 +206,7 @@ start_request(player_stats, #state{} = State) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
-process_response( player_info
+process_response( _Request
                 , {error, socket_closed_remotely}
                 , State) ->
     lager:warning("QUERY socket closed remotely"),
@@ -230,7 +231,7 @@ process_response( player_info
                             , name = binary_to_list( jsonx:get({"name", "first_lower"}, CharJson, jsthrow) )
                             , world = warboard_info:world( jsonx:get({"world_id"}, CharJson, jsthrow) )
                             , faction = warboard_info:faction( jsonx:get({"faction_id"}, CharJson, jsthrow) )
-                            , last_update = xtime:unix_epoch()
+                            , last_update = xtime:unix_time()
                         },
                     lager:debug("RESPONSE replylist ~p ~p", [Fromlist, PlayerInfo]),
                     [ gen_server:reply(X, PlayerInfo) || X <- Fromlist ],
@@ -252,15 +253,3 @@ process_response(player_stats, Result, State) ->
     % generate player_info responses also
     State.
     
-    
-%%%%% ------------------------------------------------------- %%%%%
-
-
-maps_take(N, Requests) ->
-    {_, R} =    maps:fold(
-                    fun (_, _, {0, R1}) -> {0, R1}
-                    ;   (K, _, {X, R2}) -> {X-1, [K | R2]}
-                    end,
-                    {N, []},
-                    Requests),
-    R.

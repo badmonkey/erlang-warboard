@@ -2,7 +2,7 @@
 -module(warbd_channel).
 
 
--export([new/0, player_event/0, player_event/2]).
+-export([new/0, player_event/0, player_event/1, player_event/2]).
 
 
 %%%%% ------------------------------------------------------- %%%%%
@@ -14,6 +14,9 @@ new() ->
     
 player_event() ->
     player_event(match_one, match_one).
+    
+player_event(World) ->
+    player_event(World, match_one).
     
 player_event(World, Faction) ->
     [player, World, Faction, event].    

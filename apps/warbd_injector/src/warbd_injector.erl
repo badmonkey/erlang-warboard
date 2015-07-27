@@ -45,7 +45,7 @@ websock_info() ->
 
 
 init(_Args) ->
-    lager:info("Starting warbd_injector"),
+    lager:notice("Starting census event ingest service"),
     {ok, #state{ evtchannel = warbd_channel:new() }}.
 
     

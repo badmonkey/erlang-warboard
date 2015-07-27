@@ -1,5 +1,5 @@
 #!/bin/bash
 
-rm -rf logs/*
+rm -rf log/*
 
 exec erl -pz ebin/ deps/*/ebin apps/*/ebin  -config priv/sys.config  -s warboard_app
