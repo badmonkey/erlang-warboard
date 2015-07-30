@@ -54,11 +54,11 @@ init(_Args) ->
 
 handle_frame({system, up}, #state{} = State) ->
     { ok
-    , #{ <<"service">> => <<"event">>
-       , <<"action">> => <<"subscribe">>
-       , <<"worlds">> => [<<"25">>]
-       , <<"eventNames">> => [<<"PlayerLogin">>, <<"PlayerLogout">>]
-       }
+%    , #{ <<"service">> => <<"event">>
+%       , <<"action">> => <<"subscribe">>
+%       , <<"worlds">> => [<<"25">>]
+%       , <<"eventNames">> => [<<"PlayerLogin">>, <<"PlayerLogout">>]
+%       }
     , State};
 
     

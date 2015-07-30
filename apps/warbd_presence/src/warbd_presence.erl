@@ -25,6 +25,7 @@
     , login_table
     , world                 :: warbd_type:world()
     , first_event           :: warbd_type:timestamp() | undefined
+    , prev_event            :: warbd_type:timestamp()
     , oldest_player         :: {warbd_type:player_id(), warbd_type:timestamp()} | undefined
     , count                 :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}
     }).
@@ -79,6 +80,7 @@ init([World]) ->
             , login_table = LoginTable
             , world = World
             , first_event = undefined
+            , prev_event = xtime:unix_time()
             , oldest_player = undefined
             , count = {0, 0, 0}
             }}.
@@ -137,12 +139,12 @@ handle_info( {login, PlayerId, World, Faction, Timestamp}
                  
     { noreply
     , NState#state{ count = update_count(1, Faction, Count)
-                  , first_event = NewFirst
+                  , prev_event = Timestamp
                   }
     };
     
     
-handle_info( {logout, PlayerId, World, Faction, _Timestamp}
+handle_info( {logout, PlayerId, World, Faction, Timestamp}
            , #state{ world = World
                    , oldest_player = Oldest
                    , count = Count
@@ -175,6 +177,7 @@ handle_info( {logout, PlayerId, World, Faction, _Timestamp}
                 
     { noreply
     , MState#state{ count = update_count(-1, Faction, Count)
+                  , prev_event = Timestamp
                   }
     };
 

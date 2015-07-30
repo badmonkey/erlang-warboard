@@ -23,7 +23,7 @@
     { player_id             :: warbd_type:player_id()
     , last_update           :: warbd_type:timestamp()
     , last_login            :: warbd_type:timestamp()
-    , battle_rank           :: non_neg_integer()
+    , battle_rank           :: pos_integer()
     , login_count           :: pos_integer()
     , minutes_played        :: non_neg_integer()
     , score                 :: #count_stats_type{}
