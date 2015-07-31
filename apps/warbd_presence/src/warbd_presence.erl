@@ -65,6 +65,9 @@ oldest_player(World) ->
 % Initialise Server
 
 
+-define(REPORT_PERIOD, 2*60*1000).
+
+
 init([World]) ->
     lager:notice("Starting presence service for ~p", [World]),
     EvtChannel = warbd_channel:new(),
@@ -73,6 +76,8 @@ init([World]) ->
     LoginTable = ets:new( table_name(World, login), [protected, ordered_set, named_table, {read_concurrency, true}, {keypos, 1}]),
     
     publisher:subscribe(EvtChannel, warbd_channel:player_event(World)),
+    
+    timer:send_interval(?REPORT_PERIOD, {period_interval}),
     
     { ok
     , #state{ evtchannel = EvtChannel
@@ -117,12 +122,27 @@ handle_cast(_Msg, State) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
+handle_info( {period_interval}
+           , #state{ world = World
+                   , count = Count
+                   , oldest_player = Oldest } = State) ->
+	Timestamp = xtime:unix_time(),
+	case Oldest of
+		undefined			->
+			lager:notice("Population(~p): ~p", [World, Count])
+			
+	;	{_, OldestLogin}	->
+			lager:notice("Population(~p): ~p  ~s", [World, Count, text:timesince(OldestLogin) ])
+	end,
+	{noreply, State};
+	
+	
 handle_info( {login, PlayerId, World, Faction, Timestamp}
            , #state{ world = World
                    , count = Count
                    , presence_table = PTab
                    , login_table = LTab } = State) ->
-    lager:notice("presence LOGIN ~p ~p ~p", [PlayerId, World, Faction]),
+    lager:info("presence LOGIN ~p ~p ~p", [PlayerId, World, Faction]),
     
     Presence = {PlayerId, Timestamp},
     
@@ -150,7 +170,7 @@ handle_info( {logout, PlayerId, World, Faction, Timestamp}
                    , count = Count
                    , presence_table = PTab
                    , login_table = LTab } = State) ->
-    lager:notice("presence LOGOUT ~p ~p ~p", [PlayerId, World, Faction]),
+    lager:info("presence LOGOUT ~p ~p ~p", [PlayerId, World, Faction]),
     
     case ets:lookup(PTab, PlayerId) of
         []          -> ok
