@@ -15,7 +15,7 @@ census_id() ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
--spec world( binary() | string() | integer() ) -> warbd_type:world().
+-spec world( binary() | string() | integer() ) -> warbd_type:world() | type:exception().
 
 world(B) when is_binary(B) ->
     world( xerlang:binary_to_integer(B) );
@@ -38,7 +38,28 @@ world(I) when is_integer(I) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
--spec faction( binary() | string() | integer() ) -> warbd_type:faction().
+-spec zone( binary() | string() | integer() ) -> warbd_type:zone() | type:exception().
+
+zone(B) when is_binary(B) ->
+    zone( xerlang:binary_to_integer(B) );
+
+zone(L) when is_list(L) ->
+    zone( list_to_integer(L) );
+    
+zone(I) when is_integer(I) ->
+    case I of
+        2   -> indar
+    ;   4   -> hossin
+    ;   6   -> amerish
+    ;   8   -> esamir
+    ;   _   -> throw({error, unknown_zone_id})
+    end.
+
+    
+%%%%% ------------------------------------------------------- %%%%%
+
+
+-spec faction( binary() | string() | integer() ) -> warbd_type:faction() | type:exception().
 
 faction(B) when is_binary(B) ->
     faction( xerlang:binary_to_integer(B) );

@@ -13,7 +13,7 @@
 
 
 -export([start_link/0, child_spec/2, tables/0, table_info/1]).
--export([faction/1, world/1, world_faction/1]).
+-export([faction/1, world/1, world_faction/1, name/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
@@ -79,6 +79,16 @@ world_faction(PlayerId) ->
                 ;   [PlayerRec] -> PlayerRec
                 end,
     {Player#db_player_info.world, Player#db_player_info.faction}.
+    
+    
+-spec name( warbd_type:player_id() ) -> string().
+
+name(PlayerId) ->
+    Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
+                    []          -> gen_server:call(?SERVER, {fetch_player_info, PlayerId}, infinity)
+                ;   [PlayerRec] -> PlayerRec
+                end,
+    (Player#db_player_info.name).
     
 
 %%%%% ------------------------------------------------------- %%%%%

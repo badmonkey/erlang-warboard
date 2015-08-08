@@ -18,6 +18,7 @@
 
 
 -define(MAX_PLAYER_REQUEST, 10).
+-define(REPORT_PERIOD, 2*60*1000).
 
 
 %%%%% ------------------------------------------------------- %%%%%
@@ -29,10 +30,12 @@
 
 
 -record(state,
-    { census_id                         :: string()
-    , pending       = init_pending()    :: #{ request_type() => request() }
-    , request_type  = undefined         :: undefined | request_type()
+    { census_id                             :: string()
+    , pending           = init_pending()    :: #{ request_type() => request() }
+    , request_type      = undefined         :: undefined | request_type()
     , httpc_ref
+    , query_total       = 0                 :: non_neg_integer()
+    , query_interval    = 0                 :: non_neg_integer()
     }).
 
          
@@ -67,7 +70,13 @@ get_player_stats(PlayerId) ->
 
 init(_Args) ->
     lager:notice("Starting census api query service"),
-    {ok, #state{ census_id = warboard_info:census_id() }}.
+    
+    timer:send_interval(?REPORT_PERIOD, {period_interval}),
+    
+    { ok
+    , #state{ census_id = warboard_info:census_id()
+            }
+    }.
 
     
 %%%%% ------------------------------------------------------- %%%%%
@@ -117,6 +126,14 @@ handle_info( {http, {RequestId, Result}}
     {noreply, NewState2};
     
     
+handle_info( {period_interval}
+           , #state{ query_total = Total
+                   , query_interval = Interval } = State) ->
+    lager:notice("QUERIES ~p, total ~p", [Interval, Total]),
+    
+    {noreply, State#state{ query_interval = 0 } };
+    
+    
 handle_info(_Info, State) ->
     lager:error("info STOPPED ~p", [_Info]),
     {stop, invalid_info_request, State}.
@@ -161,7 +178,7 @@ add_request(#{} = Requests, PlayerId, From) ->
 
 
 % iterate through all pending request types trying to start a batch of requests
-start_pending_requests(#state{ pending = Pending } = State) ->
+start_pending_requests( #state{ pending = Pending } = State) ->
     {_, NState} =   maps:fold(
                         fun (_, _, {true, S1}) -> {true, S1}
                         ;   (K, V, {false, S2}) ->
@@ -180,7 +197,11 @@ start_pending_requests(#state{ pending = Pending } = State) ->
 
     
 
-start_request(player_info, #state{ census_id = Census, pending = #{ player_info := Requests } } = State) ->
+start_request( player_info
+             , #state{ census_id = Census
+                     , pending = #{ player_info := Requests }
+                     , query_total = Total
+                     , query_interval = Interval } = State) ->
     Players = xmaps:takekeys(?MAX_PLAYER_REQUEST, Requests), 
     case Players of
         []  -> State
@@ -192,10 +213,11 @@ start_request(player_info, #state{ census_id = Census, pending = #{ player_info 
         lager:debug("player_info QUERY ~p", [Url]),
         {ok, RequestId} = httpc:request(get, {Url, []}, [], [{sync, false}]),
         
-        State#state{
-                  request_type = player_info
-                , httpc_ref = RequestId
-            }
+        State#state{ request_type = player_info
+                   , httpc_ref = RequestId
+                   , query_total = Total + 1
+                   , query_interval = Interval + 1
+                   }
     end;
 
     
