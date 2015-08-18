@@ -12,7 +12,8 @@
     {applications,
         [ kernel, stdlib, crypto
         , erlangx, lager
-        , warbd_presence, warbd_player_info
+        , warbd_injector, warbd_presence
+        , warbd_player_info
         ] },
     {mod, { warboard_app, []}},
     {env, []}

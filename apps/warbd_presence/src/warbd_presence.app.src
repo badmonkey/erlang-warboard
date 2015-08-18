@@ -12,7 +12,7 @@
     {applications,
         [ kernel, stdlib, crypto
         , erlangx, lager
-        , warbd_injector
+        , warbd_query
         ] },
     {mod, { warbd_presence_app, []}},
     {env, []}

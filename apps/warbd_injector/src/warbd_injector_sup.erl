@@ -25,8 +25,7 @@ init(warbd_injector_sup) ->
     { ok
     , { {one_for_one, 2, 5}
       , supervisor_child:build_specs(
-            [ router
-            , warbd_injector
+            [ warbd_injector
             ] )      
       }
     }.

@@ -23,7 +23,7 @@
 
 
 -record(state,
-    {
+    { pending_player_info       :: #{ warbd_type:player_id() => [type:server_from()] }
     }).
     
     
@@ -97,27 +97,32 @@ name(PlayerId) ->
 
 init(_Args) ->
     lager:info("Starting player_info"),
-    {ok, #state{}}.
+    EvtChannel = warbd_channel:new(),
+    
+    publisher:subscribe(EvtChannel, warbd_channel:player_info()),
+    
+    % TODO monitor warbd_query otherwise we'll get stuck waiting for replies
+    
+    { ok
+    , #state{ pending_player_info = #{}
+            }
+    }.
 
     
 %%%%% ------------------------------------------------------- %%%%%
 
 
-handle_call({fetch_player_info, PlayerId}, _From, #state{} = State) ->
-    % attempt to read from table again, in case another process has already fetched info
-    Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
-                    []          ->
-                        NewPlayer = warbd_query:get_player_info(PlayerId),
-                        mnesia:activity(transaction,
-                                        fun() ->
-                                            mnesia:write(NewPlayer)
-                                        end ),
-                        NewPlayer
-                        
-                ;   [PlayerRec] ->
-                        PlayerRec
-                end,
-    {reply, Player, State};
+handle_call( {fetch_player_info, PlayerId}, From
+           , #state{ pending_player_info = InfoMap } = State) ->
+           
+    case maps:get(PlayerId, InfoMap, undefined) of
+        undefined   ->
+            warbd_query:request_player_info(PlayerId),
+            {noreply, State#state{ pending_player_info = InfoMap#{ PlayerId => [From] } } }
+            
+    ;   FromList    ->
+            {noreply, State#state{ pending_player_info = InfoMap#{ PlayerId := [From | FromList] } } }
+    end;
     
     
 %handle_call({fetch_player_stats, PlayerId}, _From, #state{} = State) ->
@@ -128,10 +133,6 @@ handle_call(_Request, _From, State) ->
 
     
 %%%%% ------------------------------------------------------- %%%%%
-
-
-handle_cast({update_player_info, PlayerId}, #state{} = State) ->
-    {noreply, State};
     
     
 handle_cast(_Msg, State) ->
@@ -140,6 +141,24 @@ handle_cast(_Msg, State) ->
 
     
 %%%%% ------------------------------------------------------- %%%%%
+
+
+handle_info( #db_player_info{ player_id = PlayerId } = NewPlayer
+           , #state{ pending_player_info = InfoMap } = State ) ->
+    mnesia:activity(transaction,
+                    fun() ->
+                        mnesia:write(NewPlayer)
+                    end ),
+                    
+    case maps:get(PlayerId, InfoMap, undefined) of
+        undefined   ->
+            lager:warning("No one waiting for Player ~p, skipping", [PlayerId]),
+            {noreply, State}
+            
+    ;   FromList    ->
+            [ gen_server:reply(X, NewPlayer) || X <- FromList ],
+            {noreply, State#state{ pending_player_info = maps:remove(PlayerId, InfoMap) } }
+    end;
 
     
 handle_info(_Info, State) ->

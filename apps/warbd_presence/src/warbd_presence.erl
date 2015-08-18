@@ -79,6 +79,7 @@ oldest_player(World) ->
 
 
 -define(REPORT_PERIOD, 1*60*1000).
+-define(OLDEST_CHECK_PERIOD, 15*60*1000).
 
 
 init([World]) ->
@@ -89,8 +90,10 @@ init([World]) ->
     LoginTable = ets:new( table_name(World, login), [protected, ordered_set, named_table, {read_concurrency, true}, {keypos, 1}]),
     
     publisher:subscribe(EvtChannel, warbd_channel:player_event(World)),
+    publisher:subscribe(EvtChannel, warbd_channel:player_status(World)),
     
     timer:send_interval(?REPORT_PERIOD, {period_interval}),
+    timer:send_interval(?OLDEST_CHECK_PERIOD, {oldest_check}),
     
     { ok
     , #state{ evtchannel = EvtChannel
@@ -163,15 +166,26 @@ handle_info( {period_interval}
                     
     lager:notice( "Population(~p): ~s  uptime ~s, oldest ~s, events: {~p, ~p, ~p}, by faction  ~s, ~s, ~s"
                 , [ World, TotalStr, text:timesince(First), OldestInfo
-                  , EvtIn, EvtOut, EvtDel
-                  , format_faction(faction_vs, VS)
-                  , format_faction(faction_nc, NC)
-                  , format_faction(faction_tr, TR)]),
+                  , EvtIn, EvtOut, EvtOut - EvtDel
+                  , format_faction(faction_vs, Total, VS)
+                  , format_faction(faction_nc, Total, NC)
+                  , format_faction(faction_tr, Total, TR)]),
                     
     { noreply
     , State#state{ stats = reset_interval_stats(Stats)
                  }
     };
+    
+    
+handle_info( {oldest_check}
+           , #state{ oldest_player = Oldest } = State) ->
+           
+    case Oldest of
+        undefined       -> ok
+    ;   {PlayerId, _}   -> warbd_query:request_player_status(PlayerId)
+    end,
+    
+    {noreply, State};
     
     
 handle_info( {login, PlayerId, World, Faction, Timestamp}
@@ -220,8 +234,12 @@ handle_info( {logout, PlayerId, World, Faction, Timestamp}
     NState =    case Oldest of
                     {PlayerId, _}   ->
                         case ets:first(LTab) of
-                            {NwL, NwP}      -> State#state{ oldest_player = {NwP,NwL} }
-                        ;   '$end_of_table' -> State#state{ oldest_player = undefined }
+                            {NwL, NwP}      ->
+                                warbd_query:request_player_status(NwP),
+                                State#state{ oldest_player = {NwP,NwL} }
+
+                        ;   '$end_of_table' ->
+                                State#state{ oldest_player = undefined }
                         end
                         
                 ;   _               ->
@@ -239,6 +257,28 @@ handle_info( {logout, PlayerId, World, Faction, Timestamp}
                   }
     };
 
+    
+handle_info( {online, PlayerId, World, Faction, Online}
+           , #state{ world = World
+                   , presence_table = PTab } = State) ->
+                   
+    InTable =   case ets:lookup(PTab, PlayerId) of
+                    []          -> false
+                ;   [{_, _}]    -> true
+                end,
+                
+    lager:info("online status for ~p.. table: ~p, api: ~p ", [PlayerId, InTable, Online]),
+                
+    case {InTable, Online} of
+        {X, X}          -> ok   % table agrees with API
+        
+                                % send a fake event to make the table agree with the API
+    ;   {true, false}   -> self() ! {logout, PlayerId, World, Faction, xtime:unix_time()}
+    ;   {false, true}   -> self() ! {login, PlayerId, World, Faction, xtime:unix_time()}
+    end,
+    
+    {noreply, State};
+    
     
 handle_info(_Info, State) ->
     lager:warning("info UNKNOWN ~p", [_Info]),
@@ -385,17 +425,23 @@ get_count( #faction_stats{ count = Count } ) -> Count.
 
 
 format_range(X, {Min, Max}) ->
-    xstring:format("~p (~p - ~p)", [X, Min, Max]).
+    xstring:format("~p (~p .. ~p)", [X, Min, Max]).
     
     
 %%%%% ------------------------------------------------------- %%%%%
 
 
+format_faction( Faction, 0, #faction_stats{} ) ->
+    xstring:format( "~s: 0.0%  0 (0 .. 0)", [ faction_get(Faction, {"VS", "NC", "TR"}) ] );
+
+    
 format_faction( Faction
+              , Total
               , #faction_stats{ count = Count
                               , minmax = Minmax } ) ->
-    xstring:format( "~s: ~s"
+    xstring:format( "~s: ~.1f%  ~s"
                   , [ faction_get(Faction, {"VS", "NC", "TR"})
+                    , Count / Total * 100.0
                     , format_range(Count, Minmax) ] ).
 
     
