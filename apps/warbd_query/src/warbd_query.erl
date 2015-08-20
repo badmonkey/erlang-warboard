@@ -153,10 +153,19 @@ handle_info( {resume}
     {noreply, start_pending_requests(State)};
     
 
+handle_info( {tcp_error, _Ref, etimedout}
+           , #state{} = State) ->
+    lager:error("Timeout with connection"),
+    
+    timer:send_after(?PAUSE_TIME, {resume}),
+    
+    {noreply, State#state{ request_type = pause, httpc_ref = undefined }};
+
+    
 handle_info( {http, {RequestId, {error, Reason}}}
            , #state{ httpc_ref = RequestId
                    , request_type = RType } = State) ->
-    lager:error("Error with connection ~p", [Reason]),
+    lager:error("Error with connection ~p ~p", [RType, Reason]),
     
     timer:send_after(?PAUSE_TIME, {resume}),
     

@@ -41,6 +41,7 @@
     , prev_event            :: warbd_type:timestamp()
     , oldest_player         :: { warbd_type:player_id(), warbd_type:timestamp() } | undefined
     , stats                 :: #interval_stats{}
+    , playtime_stddev
     }).
 
          
@@ -111,6 +112,7 @@ init([World]) ->
                                                  , new_faction_stats(0)
                                                  }
                                      }
+            , playtime_stddev = stream:stddev_new()
             }
     }.
 
@@ -153,6 +155,7 @@ handle_info( {period_interval}
                                             , event_count = {EvtIn, EvtOut, EvtDel}
                                             , faction = {VS, NC, TR}
                                             } = Stats
+                   , playtime_stddev = Playtime
                    , first_event = First
                    , oldest_player = Oldest } = State) ->
 
@@ -169,7 +172,16 @@ handle_info( {period_interval}
                   , EvtIn, EvtOut, EvtOut - EvtDel
                   , format_faction(faction_vs, Total, VS)
                   , format_faction(faction_nc, Total, NC)
-                  , format_faction(faction_tr, Total, TR)]),
+                  , format_faction(faction_tr, Total, TR)
+                  ]),
+                  
+    { Mean, Stddev } = stream:stddev_values(Playtime),
+    lager:notice( "Average playtime  samples ~p, ~s +- ~s"
+                , [ stream:stddev_samples(Playtime)
+                  , text:long_duration( erlang:trunc(Mean), 3, false )
+                  , text:long_duration( erlang:trunc(Stddev), 3, false )
+                  ] ),
+    lager:notice( "Average playtime ~p +- ~p", [Mean, Stddev] ),
                     
     { noreply
     , State#state{ stats = reset_interval_stats(Stats)
@@ -219,17 +231,18 @@ handle_info( {logout, PlayerId, World, Faction, Timestamp}
            , #state{ world = World
                    , oldest_player = Oldest
                    , stats = Stats
+                   , playtime_stddev = Playtime
                    , presence_table = PTab
                    , login_table = LTab } = State) ->
     lager:info("presence LOGOUT ~p ~p ~p", [PlayerId, World, Faction]),
     
-    Action =    case ets:lookup(PTab, PlayerId) of
-                    []          -> ghost
-                ;   [{P, L}]    ->
-                        ets:delete(LTab, {L,P}),
-                        ets:delete(PTab, P),
-                        logout
-                end,
+    {Action, Login} =   case ets:lookup(PTab, PlayerId) of
+                            []          -> {ghost, 0}
+                        ;   [{P, L}]    ->
+                                ets:delete(LTab, {L,P}),
+                                ets:delete(PTab, P),
+                                {logout, L}
+                        end,
     
     NState =    case Oldest of
                     {PlayerId, _}   ->
@@ -251,8 +264,14 @@ handle_info( {logout, PlayerId, World, Faction, Timestamp}
                 ;   _           -> NState
                 end,
                 
+    NewPlaytime =   case Action of
+                        ghost   -> Playtime
+                    ;   logout  -> stream:stddev_push(Timestamp - Login, Playtime)
+                    end,
+                
     { noreply
     , MState#state{ stats = update_interval_stats(Action, Faction, Stats)
+                  , playtime_stddev = NewPlaytime
                   , prev_event = Timestamp
                   }
     };
