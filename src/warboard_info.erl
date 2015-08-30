@@ -2,7 +2,9 @@
 -module(warboard_info).
 
 
--export([census_id/0, world/1, faction/1, timestamp/1, battlerank/1, brackets/2]).
+-export([ census_id/0, world/1, faction/1, timestamp/1
+        , world_tag/1
+        , battlerank/1, brackets/2]).
 
 
 %%%%% ------------------------------------------------------- %%%%%
@@ -33,7 +35,20 @@ world(I) when is_integer(I) ->
     ;   25  -> briggs
     ;   _   -> throw({error, unknown_world_id})
     end.
-    
+
+
+%%%%% ------------------------------------------------------- %%%%%
+
+
+world_tag(<<"EventServerEndpoint_Connery_1">>)  -> connery;
+world_tag(<<"EventServerEndpoint_Miller_10">>)  -> miller;
+world_tag(<<"EventServerEndpoint_Cobalt_13">>)  -> cobalt;
+world_tag(<<"EventServerEndpoint_Emerald_17">>) -> emerald;
+world_tag(<<"EventServerEndpoint_Jaeger_19">>)  -> jaeger;
+world_tag(<<"EventServerEndpoint_Briggs_25">>)  -> briggs;
+
+world_tag(_) -> throw({error, unknown_world_tag}).
+
     
 %%%%% ------------------------------------------------------- %%%%%
 

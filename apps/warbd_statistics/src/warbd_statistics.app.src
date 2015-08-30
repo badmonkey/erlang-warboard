@@ -1,0 +1,19 @@
+{application, warbd_statistics,
+[
+    {description, "warbd_statistics"},
+    {vsn, "1.0.0"},
+    {modules,
+        [ warbd_statistics
+        , warbd_statistics_app, warbd_statistics_sup
+        ] },
+    {registered,
+        [ warbd_statistics
+        ] },
+    {applications,
+        [ kernel, stdlib, crypto
+        , erlangx, lager
+        ] },
+    {mod, { warbd_statistics_app, []}},
+    {env, []}
+]}.
+

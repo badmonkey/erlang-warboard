@@ -14,13 +14,29 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+         
+         
+-define(SHORT_PERIOD, 2*60*1000).
+-define(CHECK_PERIOD, 15*60*1000).
+-define(LONG_PERIOD,  1*60*60*1000).
 
+                     
 %%%%% ------------------------------------------------------- %%%%%
 % Server State
 
 
 -record(state,
     { evtchannel
+    , last_status_update    :: warbd_type:timestamp()
+    
+    , short_timer_ref       :: reference()
+    , last_short_update     :: warbd_type:timestamp()
+    
+    , check_timer_ref       :: reference()
+    , last_check_update     :: warbd_type:timestamp()
+    
+    , long_timer_ref        :: reference()
+    , last_long_update      :: warbd_type:timestamp()
     }).
 
          
@@ -46,7 +62,21 @@ websock_info() ->
 
 init(_Args) ->
     lager:notice("Starting census event ingest service"),
-    {ok, #state{ evtchannel = warbd_channel:new() }}.
+    Now = xtime:unix_time(),
+    { ok
+    , #state{ evtchannel = warbd_channel:new()
+            , last_status_update = Now
+            
+            , short_timer_ref = erlang:start_timer(?SHORT_PERIOD, self(), interval)
+            , last_short_update = Now
+            
+            , check_timer_ref = erlang:start_timer(?CHECK_PERIOD, self(), interval)
+            , last_check_update = Now
+            
+            , long_timer_ref = erlang:start_timer(?LONG_PERIOD, self(), interval)
+            , last_long_update = Now
+            }
+    }.
 
     
 %%%%% ------------------------------------------------------- %%%%%
@@ -54,11 +84,21 @@ init(_Args) ->
 
 handle_frame({system, up}, #state{} = State) ->
     { ok
-    , #{ <<"service">> => <<"event">>
-       , <<"action">> => <<"subscribe">>
-       , <<"worlds">> => [<<"25">>]
-       , <<"eventNames">> => [<<"PlayerLogin">>, <<"PlayerLogout">>]
-       }
+    , [ #{ <<"service">> => <<"event">>
+         , <<"action">> => <<"subscribe">>
+         , <<"worlds">> => [<<"25">>]
+         , <<"eventNames">> => [ <<"PlayerLogin">>, <<"PlayerLogout">>
+                               , <<"FacilityControl">>, <<"MetagameEvent">>]
+         }
+      %, #{ <<"service">> => <<"event">>
+      %   , <<"action">> => <<"subscribe">>
+      %   , <<"characters">> => [<<"all">>]
+      %   , <<"worlds">> => [<<"25">>]
+      %   , <<"eventNames">> => [ <<"GainExperience">>
+      %                         , <<"Death">>, <<"VehicleDestroy">>
+      %                         , <<"PlayerFacilityDefend">>, <<"PlayerFacilityCapture">>]
+      %   }
+      ]
     , State};
 
     
@@ -68,9 +108,7 @@ handle_frame({json, #{ <<"send this for help">> := _Msg}}, #state{} = State) ->
     
     
 handle_frame({json, #{ <<"type">> := <<"heartbeat">> } = Data }, #state{} = State) ->
-    % send heartbeat message to pubsub system
-    lager:debug("frame HEARBEAT ~p", [Data]),
-    {ok, State};    
+    handle_heartbeat( maps:get(<<"online">>, Data), State );
     
     
 handle_frame({json, #{ <<"type">> := <<"serviceStateChanged">> } = Data }, #state{} = State) ->
@@ -140,6 +178,28 @@ handle_event(Data, #state{} = State) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
+handle_heartbeat( #{} = Data
+                , #state{ last_status_update = PrevTime } = State ) ->
+    Now = xtime:unix_time(),
+    Interval = Now - PrevTime,
+    
+    maps:fold(
+          fun(K, V, ok) ->
+            World = warboard_info:world_tag(K),
+
+            publisher:notify( State#state.evtchannel
+                            , warbd_channel:server_status(World)
+                            , {heartbeat, World, jsonx:as_boolean(V), Now, Interval}),
+            ok
+          end
+        , ok
+        , Data),
+    {ok, State#state{ last_status_update = Now }}.
+
+
+%%%%% ------------------------------------------------------- %%%%%
+
+
 handle_call(_Request, _From, #state{} = State) ->
     lager:warning("call UNKNOWN ~p", [_Request]),
     {reply, ok, State}.
@@ -154,6 +214,57 @@ handle_cast(_Msg, #state{} = State) ->
 
     
 %%%%% ------------------------------------------------------- %%%%%
+
+
+handle_info( {timeout, TimerRef, interval}
+           , #state{ short_timer_ref = TimerRef
+                   , last_short_update = PrevTime } = State) ->
+    erlang:cancel_timer(TimerRef),
+    Now = xtime:unix_time(),
+    
+    publisher:notify( State#state.evtchannel
+                    , warbd_channel:server_event()
+                    , {short_period_timer, Now, Now - PrevTime}),
+
+    { noreply
+    , State#state{ last_short_update = Now
+                 , short_timer_ref = erlang:start_timer(?SHORT_PERIOD, self(), interval)
+                 }
+    };
+    
+    
+handle_info( {timeout, TimerRef, interval}
+           , #state{ check_timer_ref = TimerRef
+                   , last_check_update = PrevTime } = State) ->
+    erlang:cancel_timer(TimerRef),
+    Now = xtime:unix_time(),
+    
+    publisher:notify( State#state.evtchannel
+                    , warbd_channel:server_event()
+                    , {check_period_timer, Now, Now - PrevTime}),
+
+    { noreply
+    , State#state{ last_check_update = Now
+                 , check_timer_ref = erlang:start_timer(?CHECK_PERIOD, self(), interval)
+                 }
+    };
+    
+    
+handle_info( {timeout, TimerRef, interval}
+           , #state{ long_timer_ref = TimerRef
+                   , last_long_update = PrevTime } = State) ->
+    erlang:cancel_timer(TimerRef),
+    Now = xtime:unix_time(),
+    
+    publisher:notify( State#state.evtchannel
+                    , warbd_channel:server_event()
+                    , {long_period_timer, Now, Now - PrevTime}),
+                    
+    { noreply
+    , State#state{ last_long_update = Now
+                 , long_timer_ref = erlang:start_timer(?LONG_PERIOD, self(), interval)
+                 }
+    };    
 
     
 handle_info(_Info, #state{} = State) ->

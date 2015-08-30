@@ -19,16 +19,13 @@
 % Server State
 
 
--record(faction_stats,
-    { count                 :: non_neg_integer()
-    , minmax                :: {non_neg_integer(), non_neg_integer()}
-    }).
+-type pop_count() :: { type:natural(), type:natural(), type:natural() }.
+
     
 -record(interval_stats,
-    { total                 :: non_neg_integer()
-    , minmax                :: {non_neg_integer(), non_neg_integer()}
-    , event_count           :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}
-    , faction               :: { #faction_stats{}, #faction_stats{}, #faction_stats{} }
+    { total                 :: pop_count()
+    , event_count           :: { type:natural(), type:natural(), type:natural() }
+    , faction               :: { pop_count(), pop_count(), pop_count() }
     }).
 
 
@@ -38,10 +35,9 @@
     , login_table
     , world                 :: warbd_type:world()
     , first_event           :: warbd_type:timestamp()
-    , prev_event            :: warbd_type:timestamp()
+    , last_update           :: warbd_type:timestamp()
     , oldest_player         :: { warbd_type:player_id(), warbd_type:timestamp() } | undefined
     , stats                 :: #interval_stats{}
-    , playtime_stddev
     }).
 
          
@@ -79,9 +75,6 @@ oldest_player(World) ->
 % Initialise Server
 
 
--define(REPORT_PERIOD, 1*60*1000).
--define(OLDEST_CHECK_PERIOD, 15*60*1000).
-
 
 init([World]) ->
     lager:notice("Starting presence service for ~p", [World]),
@@ -89,12 +82,10 @@ init([World]) ->
     
     PresenceTable = ets:new( table_name(World, presence), [protected, set, named_table, {read_concurrency, true}, {keypos, 1}]),
     LoginTable = ets:new( table_name(World, login), [protected, ordered_set, named_table, {read_concurrency, true}, {keypos, 1}]),
-    
+
+    publisher:subscribe(EvtChannel, warbd_channel:server_event()),
     publisher:subscribe(EvtChannel, warbd_channel:player_event(World)),
-    publisher:subscribe(EvtChannel, warbd_channel:player_status(World)),
-    
-    timer:send_interval(?REPORT_PERIOD, {period_interval}),
-    timer:send_interval(?OLDEST_CHECK_PERIOD, {oldest_check}),
+
     
     { ok
     , #state{ evtchannel = EvtChannel
@@ -102,17 +93,15 @@ init([World]) ->
             , login_table = LoginTable
             , world = World
             , first_event = xtime:unix_time()
-            , prev_event = xtime:unix_time()
+            , last_update = xtime:unix_time()
             , oldest_player = undefined
-            , stats = #interval_stats{ total = 0
-                                     , minmax = {0, 0}
-                                     , event_count = {0, 0, 0}
-                                     , faction = { new_faction_stats(0)
-                                                 , new_faction_stats(0)
-                                                 , new_faction_stats(0)
+            , stats = #interval_stats{ total = new_pop_count(0)
+                                     , event_count = new_pop_count(0)
+                                     , faction = { new_pop_count(0)
+                                                 , new_pop_count(0)
+                                                 , new_pop_count(0)
                                                  }
                                      }
-            , playtime_stddev = stream:stddev_new()
             }
     }.
 
@@ -147,49 +136,41 @@ handle_cast(_Msg, State) ->
     
 %%%%% ------------------------------------------------------- %%%%%
 
-
-handle_info( {period_interval}
+  
+handle_info( {pubsub_post, {short_period_timer, _, _}}
            , #state{ world = World
-                   , stats = #interval_stats{ total = Total
-                                            , minmax = Minmax
+                   , stats = #interval_stats{ total = TotalPop
                                             , event_count = {EvtIn, EvtOut, EvtDel}
                                             , faction = {VS, NC, TR}
                                             } = Stats
-                   , playtime_stddev = Playtime
                    , first_event = First
+                   , last_update = PrevTime
                    , oldest_player = Oldest } = State) ->
-
+    
     OldestInfo =    case Oldest of
                         undefined               -> "none"
                     ;   {OldId, OldestLogin}    ->
                             xstring:format("~s ~s ago", [warbd_player_info:name(OldId), text:timesince(OldestLogin)])
                     end,
-                    
-    TotalStr = format_range(Total, Minmax),
-                    
-    lager:notice( "Population(~p): ~s  uptime ~s, oldest ~s, events: {~p, ~p, ~p}, by faction  ~s, ~s, ~s"
-                , [ World, TotalStr, text:timesince(First), OldestInfo
-                  , EvtIn, EvtOut, EvtOut - EvtDel
-                  , format_faction(faction_vs, Total, VS)
-                  , format_faction(faction_nc, Total, NC)
-                  , format_faction(faction_tr, Total, TR)
-                  ]),
-                  
-    { Mean, Stddev } = stream:stddev_values(Playtime),
-    lager:notice( "Average playtime  samples ~p, ~s +- ~s"
-                , [ stream:stddev_samples(Playtime)
-                  , text:long_duration( erlang:trunc(Mean), 3, false )
-                  , text:long_duration( erlang:trunc(Stddev), 3, false )
-                  ] ),
-    lager:notice( "Average playtime ~p +- ~p", [Mean, Stddev] ),
-                    
-    { noreply
-    , State#state{ stats = reset_interval_stats(Stats)
-                 }
-    };
+    lager:notice( "Presence(~p): uptime ~s, oldest ~s"
+                , [ World, text:timesince(First), OldestInfo ]),
+                   
+    Now = xtime:unix_time(),
+    Interval = Now - PrevTime,
+
+    publisher:notify( State#state.evtchannel
+                    , warbd_channel:population_event(World)
+                    , { pop_change
+                      , World, Now, Interval
+                      , {EvtIn, EvtOut, EvtOut - EvtDel}
+                      , TotalPop
+                      , #{ faction_vs => VS, faction_nc => NC, faction_tr => TR }
+                      }),
+ 
+    {noreply, State#state{ stats = reset_stats(Stats), last_update = Now } };
     
     
-handle_info( {oldest_check}
+handle_info( {pubsub_post, {check_period_timer, _, _}}
            , #state{ oldest_player = Oldest } = State) ->
            
     case Oldest of
@@ -200,7 +181,7 @@ handle_info( {oldest_check}
     {noreply, State};
     
     
-handle_info( {login, PlayerId, World, Faction, Timestamp}
+handle_info( {pubsub_post, {login, PlayerId, World, Faction, Timestamp}}
            , #state{ world = World
                    , stats = Stats
                    , presence_table = PTab
@@ -221,34 +202,41 @@ handle_info( {login, PlayerId, World, Faction, Timestamp}
                 end,
                  
     { noreply
-    , NState#state{ stats = update_interval_stats(login, Faction, Stats)
-                  , prev_event = Timestamp
-                  }
+    , NState#state{ stats = update_stats(login, Faction, Stats) }
     };
     
     
-handle_info( {logout, PlayerId, World, Faction, Timestamp}
+handle_info( {pubsub_post, {logout, PlayerId, World, Faction, Timestamp}}
            , #state{ world = World
                    , oldest_player = Oldest
                    , stats = Stats
-                   , playtime_stddev = Playtime
                    , presence_table = PTab
                    , login_table = LTab } = State) ->
     lager:info("presence LOGOUT ~p ~p ~p", [PlayerId, World, Faction]),
     
-    {Action, Login} =   case ets:lookup(PTab, PlayerId) of
-                            []          -> {ghost, 0}
-                        ;   [{P, L}]    ->
-                                ets:delete(LTab, {L,P}),
-                                ets:delete(PTab, P),
-                                {logout, L}
-                        end,
+    Action =    case ets:lookup(PTab, PlayerId) of
+                    []          -> ghost
+                ;   [{P, L}]    ->
+                        ets:delete(LTab, {L,P}),
+                        ets:delete(PTab, P),
+
+                        publisher:notify( State#state.evtchannel
+                                        , warbd_channel:player_status(World, Faction)
+                                        , {playtime, PlayerId, World, Faction, Timestamp - L, erlang:element(1, Oldest) =:= PlayerId}),
+
+                        logout
+                end,
     
     NState =    case Oldest of
                     {PlayerId, _}   ->
                         case ets:first(LTab) of
                             {NwL, NwP}      ->
                                 warbd_query:request_player_status(NwP),
+                                
+                                publisher:notify( State#state.evtchannel
+                                                , warbd_channel:player_status(World, Faction)
+                                                , {oldest, PlayerId, World, Faction, Timestamp - NwL}),
+                                        
                                 State#state{ oldest_player = {NwP,NwL} }
 
                         ;   '$end_of_table' ->
@@ -264,20 +252,12 @@ handle_info( {logout, PlayerId, World, Faction, Timestamp}
                 ;   _           -> NState
                 end,
                 
-    NewPlaytime =   case Action of
-                        ghost   -> Playtime
-                    ;   logout  -> stream:stddev_push(Timestamp - Login, Playtime)
-                    end,
-                
     { noreply
-    , MState#state{ stats = update_interval_stats(Action, Faction, Stats)
-                  , playtime_stddev = NewPlaytime
-                  , prev_event = Timestamp
-                  }
+    , MState#state{ stats = update_stats(Action, Faction, Stats) }
     };
 
     
-handle_info( {online, PlayerId, World, Faction, Online}
+handle_info( {pubsub_post, {online, PlayerId, World, Faction, Online}}
            , #state{ world = World
                    , presence_table = PTab } = State) ->
                    
@@ -292,10 +272,23 @@ handle_info( {online, PlayerId, World, Faction, Online}
         {X, X}          -> ok   % table agrees with API
         
                                 % send a fake event to make the table agree with the API
-    ;   {true, false}   -> self() ! {logout, PlayerId, World, Faction, xtime:unix_time()}
-    ;   {false, true}   -> self() ! {login, PlayerId, World, Faction, xtime:unix_time()}
+                                % TODO look at timing and possible status corruption
+    ;   {true, false}   ->
+            publisher:notify( State#state.evtchannel
+                            , warbd_channel:player_event(World, Faction)
+                            , {logout, PlayerId, World, Faction, xtime:unix_time()})
+
+    ;   {false, true}   ->
+            publisher:notify( State#state.evtchannel
+                            , warbd_channel:player_event(World, Faction)
+                            , {login, PlayerId, World, Faction, xtime:unix_time()})
     end,
     
+    {noreply, State};
+    
+    
+handle_info( {pubsub_post, _}
+           , #state{} = State) ->    
     {noreply, State};
     
     
@@ -331,7 +324,7 @@ table_name(jaeger,login)    -> jaeger_login_table.
 %%%%% ------------------------------------------------------- %%%%%
 
 
--spec adjust( login | ghost | logout, non_neg_integer() ) -> non_neg_integer().
+-spec adjust( login | ghost | logout, type:natural() ) -> type:natural().
 
 adjust(login, X)    -> X + 1;
 adjust(ghost, X)    -> X;    
@@ -354,8 +347,7 @@ faction_set(faction_tr, X, {VS, NC, _}) -> {VS, NC, X }.
 %%%%% ------------------------------------------------------- %%%%%
 
 
-new_faction_stats(X) ->
-    #faction_stats{ count = X, minmax = {X, X} }.
+new_pop_count(X) -> { X, X, X }.
     
 
 %%%%% ------------------------------------------------------- %%%%%
@@ -369,64 +361,15 @@ update_evt_count(logout, {Logins, Logouts, Deleted}) -> {Logins, Logouts + 1, De
 %%%%% ------------------------------------------------------- %%%%%
 
 
--spec update_minmax( non_neg_integer(), {non_neg_integer(), non_neg_integer()} ) -> {non_neg_integer(), non_neg_integer()}.
+-spec update_count( type:natural(), pop_count() ) -> pop_count().
 
-update_minmax(Value, {Min, Max}) ->
+update_count(Value, {_, Min, Max}) ->
     if
-        Value < Min -> {Value, Max}
-    ;   Value > Max -> {Min, Value}
-    ;   true        -> {Min, Max}
+        Value < Min -> {Value, Value, Max}
+    ;   Value > Max -> {Value, Min, Value}
+    ;   true        -> {Value, Min, Max}
     end.
     
-    
-%%%%% ------------------------------------------------------- %%%%%
-
-    
--spec update_interval_stats( login | ghost | logout, warbd_type:faction(), #interval_stats{} ) -> #interval_stats{}.
-
-update_interval_stats( What, Faction
-                     , #interval_stats{ total = Total
-                                      , minmax = Minmax
-                                      , event_count = EvtCount
-                                      , faction = Faction_stats }) ->
-    NewTotal = adjust(What, Total),
-    NewFaction = update_faction_stats(What, faction_get(Faction, Faction_stats)),
-
-    #interval_stats{ total = NewTotal
-                   , minmax = update_minmax(NewTotal, Minmax)
-                   , event_count = update_evt_count(What, EvtCount)
-                   , faction = faction_set(Faction, NewFaction, Faction_stats)
-                   }.
-          
-                        
-%%%%% ------------------------------------------------------- %%%%%
-
-
--spec update_faction_stats( login | ghost | logout, #faction_stats{} ) -> #faction_stats{}.
-                       
-update_faction_stats( What
-                    , #faction_stats{ count = Count
-                                    , minmax = Minmax } ) ->                
-    NewCount = adjust(What, Count),
-    #faction_stats{ count = NewCount
-                  , minmax = update_minmax(NewCount, Minmax)
-                  }.
-
-
-%%%%% ------------------------------------------------------- %%%%%
-
-
-reset_interval_stats( #interval_stats{ total = Total
-                                     , faction = {VS, NC, TR} } ) ->               
-    #interval_stats{ total = Total
-                   , minmax = {Total, Total}
-                   , event_count = {0, 0, 0}
-                   , faction = { new_faction_stats( get_count(VS) )
-                               , new_faction_stats( get_count(NC) )
-                               , new_faction_stats( get_count(TR) )
-                               }
-                   }.
-                   
 
 %%%%% ------------------------------------------------------- %%%%%
 
@@ -437,30 +380,51 @@ get_faction_counts( #interval_stats{ faction = {VS, NC, TR} } ) ->
     , get_count(TR)
     }.
     
-get_count( #faction_stats{ count = Count } ) -> Count.
+get_count( {Count, _, _} ) -> Count.
 
 
 %%%%% ------------------------------------------------------- %%%%%
 
 
-format_range(X, {Min, Max}) ->
-    xstring:format("~p (~p .. ~p)", [X, Min, Max]).
-    
-    
+-spec update_stats( login | ghost | logout, warbd_type:faction(), #interval_stats{} ) -> #interval_stats{}.
+
+update_stats( What, Faction
+            , #interval_stats{ total = {Total, _, _} = TotalPop
+                             , event_count = EvtCount
+                             , faction = Faction_stats }) ->
+    NewTotal = adjust(What, Total),
+    NewFaction = update_faction_stats(What, faction_get(Faction, Faction_stats)),
+
+    #interval_stats{ total = update_count(NewTotal, TotalPop)
+                   , event_count = update_evt_count(What, EvtCount)
+                   , faction = faction_set(Faction, NewFaction, Faction_stats)
+                   }.
+                   
+   
 %%%%% ------------------------------------------------------- %%%%%
 
 
-format_faction( Faction, 0, #faction_stats{} ) ->
-    xstring:format( "~s: 0.0%  0 (0 .. 0)", [ faction_get(Faction, {"VS", "NC", "TR"}) ] );
+-spec update_faction_stats( login | ghost | logout, pop_count() ) -> pop_count().
+                       
+update_faction_stats( What
+                    , { Count, _, _ } = PopCount ) ->                
+    NewCount = adjust(What, Count),
+    update_count(NewCount, PopCount).
 
-    
-format_faction( Faction
-              , Total
-              , #faction_stats{ count = Count
-                              , minmax = Minmax } ) ->
-    xstring:format( "~s: ~.1f%  ~s"
-                  , [ faction_get(Faction, {"VS", "NC", "TR"})
-                    , Count / Total * 100.0
-                    , format_range(Count, Minmax) ] ).
+                  
+%%%%% ------------------------------------------------------- %%%%%
 
-    
+
+reset_stats( #interval_stats{ total = {Total, _, _}
+                            , faction = {VS, NC, TR} } ) ->               
+    #interval_stats{ total = new_pop_count(Total)
+                   , event_count = new_pop_count(0)
+                   , faction = { new_pop_count( get_count(VS) )
+                               , new_pop_count( get_count(NC) )
+                               , new_pop_count( get_count(TR) )
+                               }
+                   }.
+                   
+                   
+                   
+                   

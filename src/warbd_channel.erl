@@ -2,19 +2,40 @@
 -module(warbd_channel).
 
 
--export([ new/0
+-export([ new/0, warbeard_pubsub/1
+        , server_status/0, server_status/1
+        , server_event/0
         , player_event/0, player_event/1, player_event/2
         , player_info/0, player_info/1, player_info/2
-        , player_status/0, player_status/1, player_status/2]).
+        , player_status/0, player_status/1, player_status/2
+        , population_event/0, population_event/1]).
 
 
 %%%%% ------------------------------------------------------- %%%%%
 
 
+warbeard_pubsub(X)
+    -> {pubsub_post, X}.
+    
+
 new() ->
-    publisher:new(census_events).
+    publisher:new(census_events, fun warbeard_pubsub/1).
 
     
+%%%%% ------------------------------------------------------- %%%%%
+
+
+server_status() ->
+    server_status(match_one).
+    
+server_status(World) ->
+    [server, World, status].
+    
+    
+server_event() ->
+    [server, event].    
+    
+
 %%%%% ------------------------------------------------------- %%%%%
     
     
@@ -52,3 +73,14 @@ player_status(World) ->
     
 player_status(World, Faction) ->
     [player, World, Faction, status].
+
+    
+%%%%% ------------------------------------------------------- %%%%%
+
+
+population_event() ->
+    population_event(match_one).
+    
+population_event(World) ->
+    [population, World, event].
+    

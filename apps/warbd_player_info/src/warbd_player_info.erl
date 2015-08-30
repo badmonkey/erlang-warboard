@@ -24,6 +24,7 @@
 
 -record(state,
     { pending_player_info       :: #{ warbd_type:player_id() => [type:server_from()] }
+    , pending_player_stats      :: #{ warbd_type:player_id() => [type:server_from()] }
     }).
     
     
@@ -143,7 +144,7 @@ handle_cast(_Msg, State) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
-handle_info( #db_player_info{ player_id = PlayerId } = NewPlayer
+handle_info( {pubsub_post, #db_player_info{ player_id = PlayerId } = NewPlayer}
            , #state{ pending_player_info = InfoMap } = State ) ->
     mnesia:activity(transaction,
                     fun() ->

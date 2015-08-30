@@ -18,8 +18,7 @@
 
 
 -define(MAX_PLAYER_REQUEST, 10).
--define(REPORT_PERIOD, 2*60*1000).
--define(PAUSE_TIME, 1*60*1000).
+-define(PAUSE_TIME, 10*1000).
 
 
 %%%%% ------------------------------------------------------- %%%%%
@@ -80,8 +79,8 @@ request_player_status(PlayerId) ->
 init(_Args) ->
     lager:notice("Starting census api query service"),
     EvtChannel = warbd_channel:new(),
-    
-    timer:send_interval(?REPORT_PERIOD, {period_interval}),
+
+    publisher:subscribe(EvtChannel, warbd_channel:server_event()),
     
     { ok
     , #state{ census_id = warboard_info:census_id()
@@ -148,7 +147,7 @@ handle_cast(_Msg, State) ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
-handle_info( {resume}
+handle_info( {self_control, resume}
            , #state{ request_type = pause } = State) ->
     {noreply, start_pending_requests(State)};
     
@@ -157,7 +156,7 @@ handle_info( {tcp_error, _Ref, etimedout}
            , #state{} = State) ->
     lager:error("Timeout with connection"),
     
-    timer:send_after(?PAUSE_TIME, {resume}),
+    resume_after_delay(),
     
     {noreply, State#state{ request_type = pause, httpc_ref = undefined }};
 
@@ -167,7 +166,7 @@ handle_info( {http, {RequestId, {error, Reason}}}
                    , request_type = RType } = State) ->
     lager:error("Error with connection ~p ~p", [RType, Reason]),
     
-    timer:send_after(?PAUSE_TIME, {resume}),
+    resume_after_delay(),
     
     {noreply, State#state{ request_type = pause, httpc_ref = undefined }};
 
@@ -180,12 +179,17 @@ handle_info( {http, {RequestId, Result}}
     {noreply, NewState2};
     
     
-handle_info( {period_interval}
+handle_info( {pubsub_post, {short_period_timer, _, _}}
            , #state{ query_total = Total
                    , query_interval = Interval } = State) ->
-    lager:notice("QUERIES ~p, total ~p", [Interval, Total]),
+    lager:notice("Queries: interval ~p, total ~p", [Interval, Total]),
     
     {noreply, State#state{ query_interval = 0 } };
+
+    
+handle_info( {pubsub_post, _}
+           , #state{} = State) ->
+    {noreply, State};
     
     
 handle_info(_Info, State) ->
@@ -231,7 +235,7 @@ start_pending_requests( #state{ pending = Pending } = State) ->
     NState.
 
     
--define(PLAYER_INFO_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=world&c:show=character_id,name,faction_id").
+-define(PLAYER_INFO_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=world&c:resolve=online_status&c:show=character_id,name,faction_id").
 -define(PLAYER_STATS_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=stat&c:resolve=online_status").
 -define(ONLINE_STATUS_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=world&c:resolve=online_status&c:show=character_id,faction_id,online_status").
     
@@ -304,7 +308,10 @@ process_response( player_info
     Json = jiffy:decode(Body, [return_maps]),
 
     lists:foldl(
-        fun(CharJson, #state{ pending = #{ player_info := RequestSet } = Pending } = StateN) ->
+        fun( CharJson
+           , #state{ pending = #{ player_info := RequestSet
+                                , player_online := RequestSetOnline
+                                } = Pending } = StateN) ->
             try
                 BinPlayerId = jsonx:get({"character_id"}, CharJson, jsthrow),
                 PlayerId = xerlang:binary_to_integer(BinPlayerId),
@@ -316,7 +323,7 @@ process_response( player_info
                         
                         PlayerInfo = #db_player_info{
                                   player_id = PlayerId
-                                , name = binary_to_list( jsonx:get({"name", "first_lower"}, CharJson, jsthrow) )
+                                , name = erlang:binary_to_list( jsonx:get({"name", "first_lower"}, CharJson, jsthrow) )
                                 , world = World
                                 , faction = Faction
                                 , last_update = xtime:unix_time()
@@ -325,9 +332,11 @@ process_response( player_info
                         publisher:notify( State#state.evtchannel
                                         , warbd_channel:player_info(World, Faction)
                                         , PlayerInfo),
-                        
+
                         StateN#state{
-                                pending = Pending#{ player_info := sets:del_element(PlayerId, RequestSet) }
+                                pending = Pending#{ player_info := sets:del_element(PlayerId, RequestSet)
+                                                  , player_online := sets:del_element(PlayerId, RequestSetOnline)
+                                                  }
                             }
                         
                 ;   false   ->
@@ -371,7 +380,7 @@ process_response( player_online
                         lager:debug("RESPONSE ~p  online: ~p", [PlayerId, Online]),
 
                         publisher:notify( State#state.evtchannel
-                                        , warbd_channel:player_status(World, Faction)
+                                        , warbd_channel:player_event(World, Faction)
                                         , {online, PlayerId, World, Faction, Online}),
                         
                         StateN#state{
@@ -392,3 +401,9 @@ process_response( player_online
         end,
         State,
         jsonx:get({"character_list"}, Json, []) ).
+
+        
+        
+resume_after_delay() ->
+    timer:send_after(?PAUSE_TIME, {self_control, resume}).
+    
