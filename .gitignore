@@ -8,5 +8,5 @@ deps
 ebin
 .rebar
 log/
-database/
+data/
 release/
