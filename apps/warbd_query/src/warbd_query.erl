@@ -174,15 +174,26 @@ handle_info( {http, {RequestId, {error, Reason}}}
 handle_info( {http, {RequestId, Result}}
            , #state{ httpc_ref = RequestId
                    , request_type = RType } = State) ->
-    NewState1 = process_response(RType, Result, State),
+    lager:debug("Processing response for ~p", [RType]),
+    NewState1 = try
+                    process_response(RType, Result, State)
+                catch
+                    throw:Error     ->
+                        lager:error("Unable to process response ~p ~p", [Error, Result]),
+                        
+                        resume_after_delay(),
+                        
+                        State#state{ request_type = pause, httpc_ref = undefined }
+                end,
     NewState2 = start_pending_requests(NewState1),
     {noreply, NewState2};
     
     
-handle_info( {pubsub_post, {short_period_timer, _, _}}
+handle_info( {pubsub_post, {short_period_timer, _, Period}}
            , #state{ query_total = Total
                    , query_interval = Interval } = State) ->
-    lager:notice("Queries: interval ~p, total ~p", [Interval, Total]),
+    lager:notice("Queries: ~s interval ~p, total ~p"
+                , [ text:long_duration(Period, 2, false), Interval, Total ]),
     
     {noreply, State#state{ query_interval = 0 } };
 
@@ -220,6 +231,11 @@ init_pending() ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
+% We're pausing queries (probably because of error) don't start new requests
+start_pending_requests( #state{ request_type = pause } = State) ->
+    State;
+
+    
 % iterate through all pending request types trying to start a batch of requests
 start_pending_requests( #state{ pending = Pending } = State) ->
     {_, NState} =   maps:fold(
@@ -235,9 +251,9 @@ start_pending_requests( #state{ pending = Pending } = State) ->
     NState.
 
     
+-define(ONLINE_STATUS_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=world&c:resolve=online_status&c:show=character_id,faction_id,online_status").    
 -define(PLAYER_INFO_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=world&c:resolve=online_status&c:show=character_id,name,faction_id").
 -define(PLAYER_STATS_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=stat&c:resolve=online_status").
--define(ONLINE_STATUS_QUERY, "http://census.daybreakgames.com/~s/get/ps2:v2/character/?character_id=~s&c:resolve=world&c:resolve=online_status&c:show=character_id,faction_id,online_status").
     
 
 start_request( player_info
@@ -305,7 +321,7 @@ process_response( _Request
 process_response( player_info
                 , {{_Version, _Code, _ReasonPhrase}, _Headers, Body}
                 , #state{} = State) ->
-    Json = jiffy:decode(Body, [return_maps]),
+    Json = jsonx:decode(Body),
 
     lists:foldl(
         fun( CharJson
@@ -313,31 +329,45 @@ process_response( player_info
                                 , player_online := RequestSetOnline
                                 } = Pending } = StateN) ->
             try
-                BinPlayerId = jsonx:get({"character_id"}, CharJson, jsthrow),
-                PlayerId = xerlang:binary_to_integer(BinPlayerId),
+                PlayerId = jsonx:get_as(integer, <<"character_id">>, CharJson, jsthrow),
 
                 case sets:is_element(PlayerId, RequestSet) of
                     true    ->
-                        World = warboard_info:world( jsonx:get({"world_id"}, CharJson, jsthrow) ),
-                        Faction = warboard_info:faction( jsonx:get({"faction_id"}, CharJson, jsthrow) ),
+                        WorldId =   case jsonx:get(<<"world_id">>, CharJson, undefined) of
+                                        undefined   -> jsonx:get(<<"online_status">>, CharJson, jsthrow)
+                                    ;   X           -> X
+                                    end,
+                        World = warboard_info:world(WorldId),
                         
-                        PlayerInfo = #db_player_info{
-                                  player_id = PlayerId
-                                , name = erlang:binary_to_list( jsonx:get({"name", "first_lower"}, CharJson, jsthrow) )
-                                , world = World
-                                , faction = Faction
-                                , last_update = xtime:unix_time()
-                            },
+                        case World of
+                            offline -> throw({error, "No useful world_id or online_status"})
+                            
+                        ;   _       ->
+                            Faction = warboard_info:faction( jsonx:get(<<"faction_id">>, CharJson, jsthrow) ),
+                            OnlineStatus = warboard_info:world( jsonx:get(<<"online_status">>, CharJson, jsthrow) ),
+                            
+                            PlayerInfo = #db_player_info{
+                                      player_id = PlayerId
+                                    , name = erlang:binary_to_list( jsonx:get(<<"name.first_lower">>, CharJson, jsthrow) )
+                                    , world = World
+                                    , faction = Faction
+                                    , last_update = xtime:unix_time()
+                                },
 
-                        publisher:notify( State#state.evtchannel
-                                        , warbd_channel:player_info(World, Faction)
-                                        , PlayerInfo),
+                            publisher:notify( State#state.evtchannel
+                                            , warbd_channel:player_info(World, Faction)
+                                            , PlayerInfo),
+                                            
+                            publisher:notify( State#state.evtchannel
+                                            , warbd_channel:player_event(World, Faction)
+                                            , {online, PlayerId, World, Faction, World =:= OnlineStatus}),
 
-                        StateN#state{
-                                pending = Pending#{ player_info := sets:del_element(PlayerId, RequestSet)
-                                                  , player_online := sets:del_element(PlayerId, RequestSetOnline)
-                                                  }
-                            }
+                            StateN#state{
+                                    pending = Pending#{ player_info := sets:del_element(PlayerId, RequestSet)
+                                                      , player_online := sets:del_element(PlayerId, RequestSetOnline)
+                                                      }
+                                }
+                        end
                         
                 ;   false   ->
                         lager:warning("No one waiting for Player ~p, skipping", [PlayerId]),
@@ -352,40 +382,51 @@ process_response( player_info
 
         end,
         State,
-        jsonx:get({"character_list"}, Json, []) );
+        jsonx:get(<<"character_list">>, Json, jsthrow) );
     
     
 process_response(player_stats, Result, State) ->
-    % generate player_info responses also
+    % generate player_stats responses
+    % generate player_info responses if appropriate
+    % generate player_online responses if appropriate
     State;
     
 
 process_response( player_online
                 , {{_Version, _Code, _ReasonPhrase}, _Headers, Body}
                 , #state{} = State) ->
-    Json = jiffy:decode(Body, [return_maps]),
+    Json = jsonx:decode(Body),
 
     lists:foldl(
         fun(CharJson, #state{ pending = #{ player_online := RequestSet } = Pending } = StateN) ->
             try
-                BinPlayerId = jsonx:get({"character_id"}, CharJson, jsthrow),
-                PlayerId = xerlang:binary_to_integer(BinPlayerId),
+                PlayerId = jsonx:get_as(integer, <<"character_id">>, CharJson, jsthrow),
 
                 case sets:is_element(PlayerId, RequestSet) of
                     true    ->
-                        World = warboard_info:world( jsonx:get({"world_id"}, CharJson, jsthrow) ),
-                        Faction = warboard_info:faction( jsonx:get({"faction_id"}, CharJson, jsthrow) ),
-                        Online = jsonx:compare({"world_id"}, {"online_status"}, CharJson, jsthrow),
+                        WorldId =   case jsonx:get(<<"world_id">>, CharJson, undefined) of
+                                        undefined   -> jsonx:get(<<"online_status">>, CharJson, jsthrow)
+                                    ;   X           -> X
+                                    end,
+                        World = warboard_info:world(WorldId),
                         
-                        lager:debug("RESPONSE ~p  online: ~p", [PlayerId, Online]),
+                        case World of
+                            offline -> throw({error, "No useful world_id or online_status"})
+                            
+                        ;   _       ->
+                            Faction = warboard_info:faction( jsonx:get(<<"faction_id">>, CharJson, jsthrow) ),
+                            OnlineStatus = warboard_info:world( jsonx:get(<<"online_status">>, CharJson, jsthrow) ),
+                            
+                            lager:debug("RESPONSE ~p  online: ~p", [PlayerId, OnlineStatus]),
 
-                        publisher:notify( State#state.evtchannel
-                                        , warbd_channel:player_event(World, Faction)
-                                        , {online, PlayerId, World, Faction, Online}),
-                        
-                        StateN#state{
-                                pending = Pending#{ player_online := sets:del_element(PlayerId, RequestSet) }
-                            }
+                            publisher:notify( State#state.evtchannel
+                                            , warbd_channel:player_event(World, Faction)
+                                            , {online, PlayerId, World, Faction, World =:= OnlineStatus}),
+                            
+                            StateN#state{
+                                    pending = Pending#{ player_online := sets:del_element(PlayerId, RequestSet) }
+                                }
+                        end
                         
                 ;   false   ->
                         lager:warning("No one waiting for Player ~p, skipping", [PlayerId]),
@@ -400,7 +441,7 @@ process_response( player_online
 
         end,
         State,
-        jsonx:get({"character_list"}, Json, []) ).
+        jsonx:get(<<"character_list">>, Json, jsthrow) ).
 
         
         

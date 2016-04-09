@@ -2,8 +2,8 @@
 -module(warboard_info).
 
 
--export([ census_id/0, world/1, faction/1, timestamp/1
-        , world_tag/1
+-export([ census_id/0, world/1, zone/1, faction/1
+        , faction_name/1, timestamp/1, world_tag/1
         , battlerank/1, brackets/2]).
 
 
@@ -17,7 +17,7 @@ census_id() ->
 %%%%% ------------------------------------------------------- %%%%%
 
 
--spec world( binary() | string() | integer() ) -> warbd_type:world() | type:exception().
+-spec world( binary() | string() | integer() ) -> warbd_type:world() | offline | type:exception().
 
 world(B) when is_binary(B) ->
     world( xerlang:binary_to_integer(B) );
@@ -27,7 +27,8 @@ world(L) when is_list(L) ->
     
 world(I) when is_integer(I) ->
     case I of
-        1   -> connery
+        0   -> offline
+    ;   1   -> connery
     ;   10  -> miller
     ;   13  -> cobalt
     ;   17  -> emerald
@@ -91,6 +92,11 @@ faction(I) when is_integer(I) ->
     end.
     
     
+faction_name(faction_vs) -> "VS";
+faction_name(faction_nc) -> "NC";
+faction_name(faction_tr) -> "TR".    
+    
+    
 %%%%% ------------------------------------------------------- %%%%%
 
 
@@ -111,6 +117,11 @@ battlerank(Score)
 battlerank(Score) ->
     length( lists:takewhile( fun(X) -> Score >= X end, extended_xp_brackets() ) ) + 99.
 
+ 
+% New 100-120 battle ranks 
+%18868950, 19812397, 20755845, 21699292, 22642740, 23586187, 24529635,
+%25473082, 26416530, 27359977, 28303425, 29246872, 30190320, 31133767,
+%32077215, 33020662, 33964110, 34907557, 35851005, 36794452, 37737900
     
 % 
 % Based off AzureProdigy formula  y = 5E-05x6 - 0.0113x5 + 0.9089x4 - 21.787x3 + 1195.7x2 - 9356.8x + 22558  + 1722072  

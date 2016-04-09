@@ -19,7 +19,7 @@
 % Server State
 
 
--type pop_count() :: { type:natural(), type:natural(), type:natural() }.
+-type pop_count() :: { Value :: type:natural(), Min :: type:natural(), Max :: type:natural() }.
 
     
 -record(interval_stats,
@@ -175,7 +175,9 @@ handle_info( {pubsub_post, {check_period_timer, _, _}}
            
     case Oldest of
         undefined       -> ok
-    ;   {PlayerId, _}   -> warbd_query:request_player_status(PlayerId)
+    ;   {PlayerId, _}   ->
+            lager:debug("Checking online status ~p", [PlayerId]),
+            warbd_query:request_player_status(PlayerId)
     end,
     
     {noreply, State};
@@ -266,22 +268,25 @@ handle_info( {pubsub_post, {online, PlayerId, World, Faction, Online}}
                 ;   [{_, _}]    -> true
                 end,
                 
-    lager:info("online status for ~p.. table: ~p, api: ~p ", [PlayerId, InTable, Online]),
+    lager:info("online status for ~p.. in table: ~p, online: ~p ", [PlayerId, InTable, Online]),
                 
     case {InTable, Online} of
         {X, X}          -> ok   % table agrees with API
         
-                                % send a fake event to make the table agree with the API
-                                % TODO look at timing and possible status corruption
-    ;   {true, false}   ->
+    ;   {true, false}   ->      % send a fake event to evict person from table.
+                                % If this may cause a duplicate logout event.
+                                % The second event will be handled as a ghost logout.
             publisher:notify( State#state.evtchannel
                             , warbd_channel:player_event(World, Faction)
                             , {logout, PlayerId, World, Faction, xtime:unix_time()})
 
-    ;   {false, true}   ->
-            publisher:notify( State#state.evtchannel
-                            , warbd_channel:player_event(World, Faction)
-                            , {login, PlayerId, World, Faction, xtime:unix_time()})
+    ;   {false, true}   ->      % Don't send a fake event, we could be in a race with a
+                                % real login event making our count wrong
+                                % @todo handle 'duplicate' login events
+            %publisher:notify( State#state.evtchannel
+            %                , warbd_channel:player_event(World, Faction)
+            %                , {login, PlayerId, World, Faction, xtime:unix_time()})
+            ok
     end,
     
     {noreply, State};

@@ -75,6 +75,7 @@ world(PlayerId) ->
 -spec world_faction( warbd_type:player_id() ) -> {warbd_type:world(), warbd_type:faction()}.
 
 world_faction(PlayerId) ->
+    lager:info("Fetch player_info {world, faction} ~p", [PlayerId]),
     Player =    case mnesia:dirty_read(db_player_info, PlayerId) of
                     []          -> gen_server:call(?SERVER, {fetch_player_info, PlayerId}, infinity)
                 ;   [PlayerRec] -> PlayerRec
@@ -115,7 +116,7 @@ init(_Args) ->
 
 handle_call( {fetch_player_info, PlayerId}, From
            , #state{ pending_player_info = InfoMap } = State) ->
-           
+    lager:info("Not in mnesia, fetching ~p", [PlayerId]),
     case maps:get(PlayerId, InfoMap, undefined) of
         undefined   ->
             warbd_query:request_player_info(PlayerId),
@@ -146,6 +147,8 @@ handle_cast(_Msg, State) ->
 
 handle_info( {pubsub_post, #db_player_info{ player_id = PlayerId } = NewPlayer}
            , #state{ pending_player_info = InfoMap } = State ) ->
+           
+    lager:debug("Update player_info ~p", [PlayerId]),
     mnesia:activity(transaction,
                     fun() ->
                         mnesia:write(NewPlayer)

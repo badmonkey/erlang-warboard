@@ -7,6 +7,7 @@
 
 -define(SERVER, ?MODULE).
 
+-include_lib("erlangx/include/constants.hrl").
 -include_lib("erlangx/include/supervisors.hrl").
 
 
@@ -16,9 +17,9 @@
 
          
          
--define(SHORT_PERIOD, 2*60*1000).
--define(CHECK_PERIOD, 15*60*1000).
--define(LONG_PERIOD,  1*60*60*1000).
+-define(SHORT_PERIOD, 2  * ?MILLISEC_PER_MIN).
+-define(CHECK_PERIOD, 15 * ?MILLISEC_PER_MIN).
+-define(LONG_PERIOD,  1  * ?MILLISEC_PER_HOUR).
 
                      
 %%%%% ------------------------------------------------------- %%%%%
@@ -87,8 +88,8 @@ handle_frame({system, up}, #state{} = State) ->
     , [ #{ <<"service">> => <<"event">>
          , <<"action">> => <<"subscribe">>
          , <<"worlds">> => [<<"25">>]
-         , <<"eventNames">> => [ <<"PlayerLogin">>, <<"PlayerLogout">>
-                               , <<"FacilityControl">>, <<"MetagameEvent">>]
+         , <<"eventNames">> => [ <<"PlayerLogin">>, <<"PlayerLogout">> ]
+%                               , <<"FacilityControl">>, <<"MetagameEvent">>]
          }
       %, #{ <<"service">> => <<"event">>
       %   , <<"action">> => <<"subscribe">>

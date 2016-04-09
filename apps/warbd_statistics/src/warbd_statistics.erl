@@ -41,6 +41,11 @@ child_spec(Id, _Args) -> ?SERVICE_SPEC(Id, ?MODULE, []).
 
 
 init(_Args) ->
+    lager:notice("Starting statistics service"),
+    EvtChannel = warbd_channel:new(),
+
+    publisher:subscribe(EvtChannel, warbd_channel:population_event()),
+    
     {ok, #state{}}.
 
     
@@ -62,6 +67,37 @@ handle_cast(_Msg, State) ->
     
 %%%%% ------------------------------------------------------- %%%%%
 
+
+handle_info( { pubsub_post
+             , { pop_change
+               , World, _, _
+               , {EvtIn, EvtOut, EvtGhosts}
+               , {PopTotal, _, _} = Pop
+               , #{} = FactionStats
+               }
+             }
+           , #state{} = State ) ->
+           
+    lager:notice("Population(~p): ~s events: ~p in, ~p out, ~p ghosts"
+                , [ World, format_range(Pop)
+                  , EvtIn, EvtOut, EvtGhosts
+                  ]),
+                  
+    lager:notice("Population(~p): ~s"
+                , [ World
+                  , format_faction(faction_vs, PopTotal, FactionStats)
+                  ]),
+    lager:notice("Population(~p): ~s"
+                , [ World
+                  , format_faction(faction_nc, PopTotal, FactionStats)
+                  ]),
+    lager:notice("Population(~p): ~s"
+                , [ World
+                  , format_faction(faction_tr, PopTotal, FactionStats)
+                  ]),
+                  
+    {noreply, State};
+    
     
 handle_info(_Info, State) ->
     lager:info("warbd_statistics:info stopped ~p", [_Info]),
@@ -82,3 +118,25 @@ code_change(_OldVsn, State, _Extra) ->
 % Private Functions
 
 
+format_range({X, Min, Max}) ->
+    xstring:format("~p (~p .. ~p)", [X, Min, Max]).
+
+    
+    
+format_faction( Faction, 0, #{} ) ->
+    xstring:format( "~s - 0.0%  0 (0 .. 0)", [ warboard_info:faction_name(Faction) ] );
+
+    
+format_faction( Faction
+              , Total
+              , #{} = FactionStats) ->
+    format_faction(Faction, Total, maps:get(Faction, FactionStats));
+    
+              
+format_faction( Faction
+              , Total
+              , {Count, _, _} = Values) ->              
+    xstring:format( "~s - ~.1f%  ~s"
+                  , [ warboard_info:faction_name(Faction)
+                    , Count / Total * 100.0
+                    , format_range(Values) ] ).    

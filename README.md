@@ -16,6 +16,11 @@ Planetside2 Leaderboard
 % sent by injector    
 
 
+    { online | offline
+    , World...}
+% sent by injector XXX
+
+
 ## server/event ##
     { Type          :: short_period_timer | check_period_timer | long_period_timer
                      % 2mins, 15mins, 1hr
@@ -79,6 +84,9 @@ Planetside2 Leaderboard
     , Interval      :: xtime:seconds()
     }
 % sent by presence
+
+
+## outfit/<world>/info
     
 
     
@@ -94,6 +102,42 @@ Planetside2 Leaderboard
 % sent by presence
 
 
+facility/<world>/event
+    {capture}
+    {defend}
+    
+        // bad event old_faction_id = 0 => facility_id/zone_id/duration_held all wrong
+    #{<<"duration_held">> => <<"1440944369">>
+    ,<<"event_name">> => <<"FacilityControl">>
+    ,<<"facility_id">> => <<"310612">>
+    ,<<"new_faction_id">> => <<"1">>
+    ,<<"old_faction_id">> => <<"0">>
+    ,<<"outfit_id">> => <<"0">>
+    ,<<"timestamp">> => <<"1440944369">>
+    ,<<"world_id">> => <<"25">>
+    ,<<"zone_id">> => <<"209125471">>}
+
+    
+    #{<<"duration_held">> => <<"4697">>
+    ,<<"event_name">> => <<"FacilityControl">>
+    ,<<"facility_id">> => <<"302020">>
+    ,<<"new_faction_id">> => <<"3">>
+    ,<<"old_faction_id">> => <<"2">>
+    ,<<"outfit_id">> => <<"37519639440001347">>
+    ,<<"timestamp">> => <<"1440945399">>
+    ,<<"world_id">> => <<"25">>
+    ,<<"zone_id">> => <<"4">>}
+    
+    
+    #{<<"duration_held">> => <<"10575">>
+    ,<<"event_name">> => <<"FacilityControl">>
+    ,<<"facility_id">> => <<"296000">>
+    ,<<"new_faction_id">> => <<"3">>
+    ,<<"old_faction_id">> => <<"3">>
+    ,<<"outfit_id">> => <<"0">>
+    ,<<"timestamp">> => <<"1440945403">>
+    ,<<"world_id">> => <<"25">>
+    ,<<"zone_id">> => <<"4">>}    
     
     
     

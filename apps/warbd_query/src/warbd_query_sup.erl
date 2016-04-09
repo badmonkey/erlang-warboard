@@ -4,20 +4,14 @@
 
 -behaviour(supervisor).
 
--export([start/0, start_link/0, init/1]).
+-export([start_link/0, init/1]).
 
 -include_lib("erlangx/include/supervisors.hrl").
 
 
 %%%%% ------------------------------------------------------- %%%%%
 % Public API
-
-
-start() ->
-    application:ensure_all_started(warbd_query),
-    lager:info("Started warbd_query server"),
-    application:load(warbd_query).
-    
+  
     
 start_link() ->
     ?START_SUPERVISOR( warbd_query_sup ).
