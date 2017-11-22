@@ -24,7 +24,17 @@ start_link() ->
 init(warboard_sup) ->
     { ok
     , { {one_for_one, 2, 5}
-      , supervisor_child:build_specs([warboard])
+      , supervisor_child:build_specs(
+            [ warboard
+            , war_global_source
+            , {source1, war_specific_source, #{ world => briggs }}
+%            , {source2, war_specific_source, #{ world => jaeger }}
+            , {presence1, war_presence, #{ world => briggs }}
+%            , {presence2, war_presence, #{ world => jaeger }}
+            , war_api_query
+            , war_player_info
+            , war_statistics
+            ])
       }
     }.
     
